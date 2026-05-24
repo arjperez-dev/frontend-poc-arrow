@@ -57,3 +57,17 @@ This file documents AI-assisted work for the Flutter frontend repository.
 - Limitations found: The handoff is a snapshot and should be updated again after Phase 4.
 - Approximate percentage of AI-assisted code: Documentation update only.
 - Critical reflection: The update reinforces that `DottedBoardPlaceholder` is not the game engine and that backend integration remains future work.
+
+## Phase 4 Game Engine Domain Entry
+
+- Date: 2026-05-24
+- AI tool/model: Codex coding agent
+- Role of the tool: Pure Dart game domain and application implementation support.
+- Task or problem addressed: Implement the graph-based game engine foundation without UI gameplay, backend integration, manual levels, random generation, or APK build.
+- Prompt or faithful paraphrase: Work only inside `frontend-poc-arrow`; implement pure Dart graph domain/application classes; ensure undirected edge traversal works from either endpoint; escaped arrows are inactive and non-blocking; keep validation structural only; use `flutter_test`; do not add `mocktail` or Singleton.
+- Result obtained: Pending team review after Phase 4 verification.
+- Modifications made by the team: Pending.
+- Lessons learned: The graph engine boundary is easiest to preserve when movement and validation stay in pure Dart and presentation remains untouched.
+- Limitations found: Phase 4 uses small test fixtures only; real manual levels and UI integration remain future phases.
+- Approximate percentage of AI-assisted code: Pending.
+- Critical reflection: The implementation demonstrates the required graph model while avoiding premature UI/backend coupling.

@@ -1,26 +1,26 @@
 # Arrow POC Frontend
 
-Flutter mobile app foundation for the Arrow Maze inspired semester project.
+Flutter mobile app for the Arrow Maze inspired semester project.
 
 ## Current Phase
 
-Phase 3 frontend bootstrap is focused on project foundation only:
+Phase 4 implements the pure Dart graph-based game engine domain/application foundation:
 
-- Flutter Android project setup.
-- Clean Architecture folder scaffold.
-- Placeholder home, levels, game, and settings screens.
-- Named routing.
-- Dark neon visual foundation.
-- English and Spanish localization.
-- API base URL configuration.
-- Basic widget tests.
-- Flutter GitHub Actions workflow.
+- Persistent graph domain model.
+- Dynamic arrow path model.
+- Structural graph level validation.
+- Movement command/use case.
+- Collision detection.
+- Exit detection.
+- Victory detection.
+- Score calculation strategy.
+- Pure Dart unit tests for graph and movement behavior.
 
-This phase does not implement the game engine, manual levels, random levels, score logic, victory/defeat rules, or full backend integration.
+This phase does not implement full gameplay UI, backend integration, the 15 manual levels, random level generation, or APK preparation.
 
 ## Architecture Direction
 
-The frontend will follow Clean Architecture:
+The frontend follows Clean Architecture:
 
 ```text
 lib/
@@ -44,7 +44,7 @@ lib/
     settings/
 ```
 
-The current empty layer folders are intentional placeholders for future phases.
+Domain and application code in `features/game` is pure Dart. It does not import Flutter widgets, BuildContext, HTTP, storage, assets, or generated localization.
 
 ## Critical Gameplay Boundary
 
@@ -52,7 +52,69 @@ Flutter owns the playable game engine.
 
 The backend stores and serves users, graph-based levels, progress, and leaderboard data. The backend must not process every player move.
 
-Future gameplay must use a persistent graph-based board model, not a matrix-only runtime model. The current `DottedBoardPlaceholder` is presentation-only and is not a game engine.
+The runtime game model is graph-based, not matrix-only:
+
+- Graph nodes represent visible dots.
+- Graph edges represent valid paths between dots.
+- Arrows are dynamic multi-segment paths over graph edges.
+- When an arrow exits, the arrow becomes escaped/inactive, but graph nodes and edges remain intact.
+
+`DottedBoardPlaceholder` is presentation-only and is not the game engine.
+
+## Game Engine Domain
+
+Main domain concepts:
+
+- `BoardGraph`
+- `GraphNode`
+- `GraphEdge`
+- `BoardCoordinate`
+- `Direction`
+- `ArrowPath`
+- `ArrowSegment`
+- `Level`
+- `GameSession`
+- `GameStatus`
+- `Score`
+
+Main application concepts:
+
+- `MoveArrowCommand`
+- `MoveArrowUseCase`
+- `MovementResolver`
+- `CollisionDetector`
+- `CheckVictoryUseCase`
+- `ScoreStrategy`
+- `ScoreCalculator`
+- `GameSessionService`
+
+## Movement Semantics
+
+Phase 4 movement is intentionally simple and deterministic:
+
+- An arrow moves from its head/end node in its current direction.
+- `BoardGraph.getNeighbor(nodeId, direction)` works from either endpoint of an undirected edge.
+- If the next edge is blocked, the arrow does not move.
+- If another active arrow occupies the target edge, the arrow does not move.
+- If no neighbor exists in the arrow direction, the move is treated as an exit.
+- Escaped arrows remain stored with `isEscaped = true`, but are inactive and do not block collisions.
+- If all arrows escape, the session status becomes `victory`.
+
+## Level Validation
+
+`LevelDefinitionValidator` performs structural validation only:
+
+- Unique node ids.
+- Unique edge ids.
+- Edge endpoints reference existing nodes.
+- Edges are orthogonal.
+- Unique arrow ids.
+- Arrow occupied edges exist.
+- Arrow start/end nodes exist.
+- Blocked edge ids exist.
+- Metadata exists.
+
+It does not solve puzzles, validate beatability, generate random levels, or create the 15 manual levels.
 
 ## Backend URL
 
@@ -73,19 +135,6 @@ Override example:
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
 ```
 
-## Localization
-
-Localization is configured with:
-
-- `l10n.yaml`
-- `lib/core/localization/l10n/app_en.arb`
-- `lib/core/localization/l10n/app_es.arb`
-
-Current languages:
-
-- English
-- Spanish
-
 ## Running Locally
 
 ```powershell
@@ -93,12 +142,6 @@ flutter pub get
 flutter analyze
 flutter test
 flutter run
-```
-
-Run with an explicit backend URL:
-
-```powershell
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
 ```
 
 ## CI
@@ -119,9 +162,9 @@ It runs:
 
 Recommended next work:
 
-- Build the graph-based game domain model.
+- Integrate the pure engine with the game UI.
 - Add local manual level assets mirroring backend graph JSON.
-- Implement arrow movement, exit handling, graph persistence, score logic, and tests.
+- Build game screen interactions around `GameSession`.
 - Add backend integration for auth, levels, progress, and leaderboard.
 - Prepare Android APK near final delivery.
 
@@ -130,7 +173,7 @@ Recommended next work:
 Use Conventional Commits in English:
 
 ```text
-feat(frontend): bootstrap flutter app foundation
-test(frontend): add startup and routing widget tests
-docs(frontend): document flutter bootstrap
+feat(game): add graph-based engine domain
+test(game): add movement and graph validation tests
+docs(frontend): document game engine domain
 ```
