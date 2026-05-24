@@ -38,4 +38,28 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get openGame => 'Abrir juego';
+
+  @override
+  String get moves => 'Movimientos';
+
+  @override
+  String get score => 'Puntaje';
+
+  @override
+  String get victory => 'Victoria';
+
+  @override
+  String get retry => 'Reintentar';
+
+  @override
+  String get nextLevel => 'Siguiente nivel';
+
+  @override
+  String get backToLevels => 'Volver a niveles';
+
+  @override
+  String get levelNotFound => 'Nivel no encontrado';
+
+  @override
+  String get loadingLevel => 'Cargando nivel';
 }

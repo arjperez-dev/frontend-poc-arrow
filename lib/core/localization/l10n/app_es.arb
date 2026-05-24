@@ -9,5 +9,13 @@
   "homeSubtitle": "Base de rompecabezas con grafos para el juego movil.",
   "levelSelectionPlaceholder": "Seleccion de niveles provisional",
   "settingsPlaceholder": "Configuracion provisional",
-  "openGame": "Abrir juego"
+  "openGame": "Abrir juego",
+  "moves": "Movimientos",
+  "score": "Puntaje",
+  "victory": "Victoria",
+  "retry": "Reintentar",
+  "nextLevel": "Siguiente nivel",
+  "backToLevels": "Volver a niveles",
+  "levelNotFound": "Nivel no encontrado",
+  "loadingLevel": "Cargando nivel"
 }

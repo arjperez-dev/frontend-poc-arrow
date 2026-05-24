@@ -4,7 +4,18 @@ Flutter mobile app for the Arrow Maze inspired semester project.
 
 ## Current Phase
 
-Phase 5 adds the required 15 deterministic manual graph-based levels as local Flutter assets and loads them through Clean Architecture boundaries.
+Phase 6 makes the app playable with the required 15 deterministic manual graph-based levels loaded from local Flutter assets.
+
+The normal user flow supports:
+
+- Opening the app and entering level selection.
+- Viewing the 15 local manual levels.
+- Selecting a level.
+- Rendering the graph board with persistent nodes and edges.
+- Rendering active arrow paths over graph edges.
+- Tapping arrows to activate movement through the existing game engine.
+- Updating moves and score.
+- Showing victory, retry, back-to-levels, and next-level actions.
 
 Local levels are stored at:
 
@@ -33,27 +44,7 @@ The asset mirrors the backend seed shape as closely as possible:
 }
 ```
 
-The 15 levels preserve explicit `number` values from 1 to 15:
-
-- Levels 1-5: easy.
-- Levels 6-10: medium.
-- Levels 11-15: hard.
-
-These levels are graph-based, not matrix-based. They are available locally so the Flutter game can run without backend access, while remaining compatible with the backend manual seed definitions.
-
-Phase 4 implemented the pure Dart graph-based game engine domain/application foundation:
-
-- Persistent graph domain model.
-- Dynamic arrow path model.
-- Structural graph level validation.
-- Movement command/use case.
-- Collision detection.
-- Exit detection.
-- Victory detection.
-- Score calculation strategy.
-- Pure Dart unit tests for graph and movement behavior.
-
-Phase 5 does not implement gameplay UI, backend fetching, random level generation, or APK preparation.
+Phase 6 does not implement backend integration, random level generation, advanced persistence, or APK preparation.
 
 ## Architecture Direction
 
@@ -134,6 +125,17 @@ Main infrastructure concepts:
 - `AssetLevelRepository`
 - `LevelDefinitionMapper`
 - `RootBundleAssetTextLoader`
+- `LocalLevelDependencies`
+
+Main presentation concepts:
+
+- `LevelSelectionScreen`
+- `GameScreen`
+- `GameScreenController`
+- `GraphBoard`
+- `GraphBoardPainter`
+- `GraphBoardLayout`
+- `GraphBoardHitTester`
 
 ## Movement Semantics
 
@@ -146,6 +148,20 @@ Phase 4 movement is intentionally simple and deterministic:
 - If no neighbor exists in the arrow direction, the move is treated as an exit.
 - Escaped arrows remain stored with `isEscaped = true`, but are inactive and do not block collisions.
 - If all arrows escape, the session status becomes `victory`.
+
+The UI does not implement movement rules. It selects an arrow id from a tap and delegates movement to `GameSessionService`, which uses the existing application/domain services.
+
+## Graph Rendering
+
+The board is rendered from graph entities only:
+
+- `BoardGraph.nodes` provide persistent visible dots.
+- `BoardGraph.edges` provide guide paths and blocked-edge accents.
+- `ArrowPath.occupiedEdgeIds` provide active arrow path segments.
+
+`GraphBoardLayout` centralizes graph-coordinate to canvas-coordinate mapping for both painting and hit testing. It lives in presentation and is not domain logic.
+
+Escaped arrows are skipped when rendering active arrows, but graph nodes and edges remain visible.
 
 ## Level Validation
 
@@ -209,10 +225,9 @@ It runs:
 
 Recommended next work:
 
-- Integrate the pure engine with the game UI.
-- Build game screen interactions around `GameSession`.
+- Add local progress persistence and level completion state.
 - Add backend integration for auth, levels, progress, and leaderboard.
-- Add random graph-based levels only after the manual level path is stable.
+- Add random graph-based levels only after the manual playable path is stable.
 - Prepare Android APK near final delivery.
 
 ## Commit Convention
@@ -222,6 +237,7 @@ Use Conventional Commits in English:
 ```text
 feat(game): add graph-based engine domain
 feat(levels): add local manual graph levels
+feat(game): add playable graph board ui
 test(game): add movement and graph validation tests
 docs(frontend): document game engine domain
 ```

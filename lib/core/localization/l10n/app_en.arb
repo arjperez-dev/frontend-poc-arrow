@@ -9,5 +9,13 @@
   "homeSubtitle": "A graph puzzle foundation for the mobile game.",
   "levelSelectionPlaceholder": "Level selection placeholder",
   "settingsPlaceholder": "Settings placeholder",
-  "openGame": "Open Game"
+  "openGame": "Open Game",
+  "moves": "Moves",
+  "score": "Score",
+  "victory": "Victory",
+  "retry": "Retry",
+  "nextLevel": "Next level",
+  "backToLevels": "Back to levels",
+  "levelNotFound": "Level not found",
+  "loadingLevel": "Loading level"
 }

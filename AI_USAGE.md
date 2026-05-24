@@ -85,3 +85,17 @@ This file documents AI-assisted work for the Flutter frontend repository.
 - Limitations found: Phase 5 does not render or play these levels yet; gameplay UI and backend synchronization remain future work.
 - Approximate percentage of AI-assisted code: Pending.
 - Critical reflection: The local level pipeline keeps the app playable offline in future phases without letting asset loading leak into pure domain logic.
+
+## Phase 6 Playable Game UI Entry
+
+- Date: 2026-05-23
+- AI tool/model: Codex coding agent
+- Role of the tool: Flutter gameplay UI implementation support.
+- Task or problem addressed: Implement the first playable graph-based UI using real local manual levels, while keeping movement rules in the existing game engine.
+- Prompt or faithful paraphrase: Work only inside `frontend-poc-arrow`; use `assets/levels/manual_levels.json` for the normal flow; render graph nodes, edges, and arrows; centralize presentation-only coordinate mapping; hit-test only to select arrow ids; delegate movement to `GameSessionService`; add tests, localization, README, and handoff updates; do not add dependencies or implement backend/random/APK/persistence work.
+- Result obtained: Added playable local level selection, graph board rendering, arrow tap activation, moves/score updates, victory UI, presentation-only coordinate mapping/hit testing, localization keys, tests, README, and handoff documentation.
+- Modifications made by the team: Pending.
+- Lessons learned: A small presentation controller and coordinate mapper keep the UI playable without contaminating the pure graph engine.
+- Limitations found: Phase 6 has no backend progress sync, random levels, advanced persistence, or release APK.
+- Approximate percentage of AI-assisted code: Pending.
+- Critical reflection: The implementation keeps the graph persistent visually and uses UI hit testing only as input selection, not as game rule logic.

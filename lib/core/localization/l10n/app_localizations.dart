@@ -157,6 +157,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open Game'**
   String get openGame;
+
+  /// No description provided for @moves.
+  ///
+  /// In en, this message translates to:
+  /// **'Moves'**
+  String get moves;
+
+  /// No description provided for @score.
+  ///
+  /// In en, this message translates to:
+  /// **'Score'**
+  String get score;
+
+  /// No description provided for @victory.
+  ///
+  /// In en, this message translates to:
+  /// **'Victory'**
+  String get victory;
+
+  /// No description provided for @retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get retry;
+
+  /// No description provided for @nextLevel.
+  ///
+  /// In en, this message translates to:
+  /// **'Next level'**
+  String get nextLevel;
+
+  /// No description provided for @backToLevels.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to levels'**
+  String get backToLevels;
+
+  /// No description provided for @levelNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Level not found'**
+  String get levelNotFound;
+
+  /// No description provided for @loadingLevel.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading level'**
+  String get loadingLevel;
 }
 
 class _AppLocalizationsDelegate
