@@ -77,6 +77,8 @@ class LevelDefinitionValidator {
       }
     }
 
+    final edgeDefById = {for (final e in definition.edges) e.id: e};
+
     final arrowIds = <String>{};
     final arrows = <ArrowPath>[];
     for (final arrow in definition.arrows) {
@@ -100,6 +102,11 @@ class LevelDefinitionValidator {
         ArrowPath(
           id: arrow.id,
           occupiedEdgeIds: arrow.occupiedEdgeIds,
+          orderedNodeIds: _deriveOrderedNodeIds(
+            startNodeId: arrow.startNodeId,
+            occupiedEdgeIds: arrow.occupiedEdgeIds,
+            edgeDefById: edgeDefById,
+          ),
           startNodeId: arrow.startNodeId,
           endNodeId: arrow.endNodeId,
           direction: arrow.direction,
@@ -118,5 +125,27 @@ class LevelDefinitionValidator {
       arrows: arrows,
       metadata: definition.metadata,
     );
+  }
+
+  static List<String> _deriveOrderedNodeIds({
+    required String startNodeId,
+    required List<String> occupiedEdgeIds,
+    required Map<String, GraphEdgeDefinition> edgeDefById,
+  }) {
+    if (occupiedEdgeIds.isEmpty) return [startNodeId];
+    final nodes = <String>[startNodeId];
+    final remaining = List<String>.from(occupiedEdgeIds);
+    var current = startNodeId;
+    while (remaining.isNotEmpty) {
+      final idx = remaining.indexWhere((id) {
+        final e = edgeDefById[id];
+        return e != null && (e.fromNodeId == current || e.toNodeId == current);
+      });
+      if (idx == -1) break;
+      final e = edgeDefById[remaining.removeAt(idx)]!;
+      current = e.fromNodeId == current ? e.toNodeId : e.fromNodeId;
+      nodes.add(current);
+    }
+    return nodes;
   }
 }

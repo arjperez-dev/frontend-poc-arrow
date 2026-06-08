@@ -244,6 +244,92 @@ Phase 10 documented level authoring, made `manual_levels.json` the authoritative
 - `flutter analyze`: no issues. `flutter test`: 95 passed (added density-band, density-increasing, and reset-view/tap tests; switched the Dart solvability test to greedy).
 - Manual emulator validation still pending — confirm dense hard levels are playable with pinch-zoom/drag/reset and that exit/collision animations and lives still behave.
 
+## Phase 11 — Varied Arrow Shape Rendering
+
+Phase 11 added an ordered node path to `ArrowPath` and switched the painter to a smooth polyline, so L/U/zigzag arrows render without joint artifacts. All work is inside `frontend-poc-arrow`; backend and Git remotes were untouched.
+
+### What Changed
+
+- **`lib/features/game/domain/arrow_path.dart`**: Added `orderedNodeIds: List<String>` field — the tail-to-head ordered sequence of node IDs (`[startNodeId, …, endNodeId]`). `copyWith` passes it through unchanged.
+- **`lib/features/game/domain/level_definition_validator.dart`**: Added `_deriveOrderedNodeIds` static helper. It does a greedy linked-list walk through `occupiedEdgeIds` starting at `startNodeId`, following whichever edge connects to the current node at each step. Called when building each `ArrowPath` during `validate()`. The `ArrowPathDefinition` model and `LevelDefinitionMapper` are unchanged.
+- **`lib/features/game/presentation/widgets/graph_board_painter.dart`**: `_paintArrowShape` now builds a single `Path` with `moveTo`/`lineTo` through `arrow.orderedNodeIds` instead of individual `drawLine` calls per edge. Added `..strokeJoin = StrokeJoin.round` to eliminate thickened joint artifacts at bends.
+- **`lib/features/game/presentation/widgets/graph_board_hit_tester.dart`**: Body hit-test now iterates consecutive node pairs from `arrow.orderedNodeIds` instead of looking up edge `fromNodeId`/`toNodeId`. Functionally equivalent; order is now guaranteed.
+- **`test/features/game/presentation/playable_game_ui_test.dart`**: Two direct `ArrowPath(...)` constructions updated to supply `orderedNodeIds: ['a']`.
+
+### New Tests (`test/features/game/application/bent_arrow_test.dart`)
+
+- `orderedNodeIds_for_L_arrow_is_tail_bend_head`: derivation for `ab+bd` (reversed-order and forward-order edge lists).
+- `orderedNodeIds_when_edges_supplied_in_reverse_order`: derivation is order-independent.
+- `orderedNodeIds_for_single_edge_arrow_is_start_end`.
+- `bent_arrow_escapes_when_path_below_head_is_clear`: L-shaped arrow on basic board exits correctly.
+- `bent_arrow_collides_when_body_sweep_hits_another_arrow`: L-shaped arrow whose tail-side sweep hits another arrow's node returns `collision`.
+
+### Phase 11 Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 107 tests passed (102 pre-existing + 5 new).
+- Backend repository and Git remotes were not modified.
+
+### Phase 11 Limitations
+
+- `_deriveOrderedNodeIds` assumes arrows are simple paths (no branches). Branching arrow shapes are not supported by the game model and would produce a truncated node list (safe fallback, not a crash).
+- Manual emulator validation (Phases 9, 10, 11) is still pending.
+
+### Phase 11 Part 2 — Random Level Generator Rewrite
+
+`tool/gen_levels.js` was rewritten from scratch. All previous level builders (`rowStack`, `buildCombLevel` as primary) were replaced with a random partition algorithm. The comb pattern is kept only as an emergency fallback (it was not triggered for any of the 15 levels).
+
+**Algorithm (sparse graph + DFS partition):**
+1. Build a W×H node set (coordinate grid). Hard levels remove boundary nodes randomly with BFS connectivity verification to create irregular silhouettes.
+2. Partition all nodes into node-disjoint simple paths via most-constrained-first DFS walk (fewest unvisited neighbours first), capped at `maxPathLen`. Singletons are merged into adjacent path tails/heads.
+3. Convert each path to an arrow via `Builder.arrowOverCells` — only the body edges of that arrow are added to the graph (sparse, no inter-arrow horizontal edges). `direction` = direction of last DFS step (always satisfies head-orientation invariant by construction).
+4. `Builder.weave()` adds vertical edges for graph connectivity. Weave edges are perpendicular to horizontal arrows and never extend a horizontal sweep.
+5. **Solvability guarantee**: With no inter-arrow horizontal edges in the graph, every horizontal arrow's sweep uses only its own body edges → exits immediately → trivially greedy-solvable. Horizontal-end bias in the DFS (prefer horizontal last step) keeps most arrows pointing right/left.
+6. Connectivity check (sparse graph can be disconnected after boundary removal even when node-set is coordinate-connected), density band check [10-15 easy / 15-30 medium / 20-50 hard], `hasBent` check (≥1 arrow with 3+ nodes), and greedy solvability check are all applied. Retry up to 200 times per level.
+
+**Grid sizes**: easy 6-7×6-7 (~42-49 nodes), medium 8-9×8-9 (~64-81 nodes), hard 9-12×9-12 with 12-25% removal (~95-112 nodes). `maxPathLen` = 4 (easy/medium), 5 (hard).
+
+**Files changed:**
+- `tool/gen_levels.js`: complete rewrite; `buildCombLevel` kept as fallback only.
+- `assets/levels/manual_levels.json`: regenerated — all 15 levels are new random layouts.
+- `test/features/game/infrastructure/manual_levels_test.dart`: removed hardcoded `hasLength(11)` for level 2 (replaced with `greaterThanOrEqualTo(10)`); updated semantics label check in `playable_game_ui_test.dart` (level 1 now has 42 nodes, 11 arrows).
+
+**Validation output:**
+- easy=11.0 < medium=17.4 < hard=22.0 (strictly increasing tier averages ✓)
+- 0 hard full-rectangle levels ✓
+- All 15: comp=1, free=-, solvable=true ✓
+- No fallbacks triggered.
+
+**Test results:** `flutter analyze` — no issues. `flutter test` — 108/108 passed.
+
+**Limitations:**
+- Hard levels have 21-24 arrows (well within [20,50] band but toward the lower end). The sparse-graph approach limits how many arrows fit in a given grid because paths can't cross. Increasing `maxPathLen` or using larger hard grids would raise the count.
+- All easy/medium levels are rectangular (bbox = W×H, rect=Y). Only hard levels have irregular silhouettes (boundary removal). This is valid per the spec ("hard levels must not ALL be full rectangles"); no constraint on easy/medium shape.
+- The JS self-test (deadlock detection) and Dart `should_have_bent_arrows_in_every_difficulty_tier` test both pass, confirming bent arrows are present in all difficulty tiers.
+
+---
+
+### Phase 11b — Level Regeneration with Bent Arrows
+
+Regenerated `assets/levels/manual_levels.json` so each difficulty tier contains visually-bent arrows. Levels 3, 8, and 13 were replaced with a "comb" pattern. All other levels remain as before.
+
+**Design (comb pattern)**: Each comb level stacks N triplets of (sparse-tooth row → full-base row → full-connector row). Tooth rows contain isolated nodes connected down to the base row. L-shaped arrows cover one tooth node + two adjacent base nodes, exiting right. A single connector-row arrow covers the full width exiting left. `weave()` adds vertical edges that link all rows into one connected component without crossing any rightward sweep path — guaranteeing no-free-nodes, solvability, and comp=1.
+
+**Files changed**:
+- `tool/gen_levels.js`: added `buildCombLevel()` helper; replaced levels 3, 8, 13 in `buildLevels()`.
+- `assets/levels/manual_levels.json`: regenerated.
+- `test/features/game/infrastructure/manual_levels_test.dart`: added `should_have_bent_arrows_in_every_difficulty_tier`.
+
+**Validation output** (all pass):
+- #3 L-Corridor: easy, 12 arrows, comp=1, free=-, solvable=true
+- #8 Comb Grid: medium, 21 arrows, comp=1, free=-, solvable=true
+- #13 Comb Maze: hard, 35 arrows, comp=1, free=-, solvable=true
+- Tier averages: easy=12.2 < medium=21.4 < hard=34.8 ✓
+
+**Test results**: `flutter analyze` — no issues. `flutter test` — 108/108 passed.
+
+**Limitations**: Level 2 name='L-Turn' and arrow count=11 are now a test contract in `manual_levels_test.dart`. Do not change level 2's name or arrow count without updating that test.
+
 ## Known Limitations
 
 - No random level generation yet.
