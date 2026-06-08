@@ -4,6 +4,7 @@ class ArrowPath {
   const ArrowPath({
     required this.id,
     required this.occupiedEdgeIds,
+    required this.orderedNodeIds,
     required this.startNodeId,
     required this.endNodeId,
     required this.direction,
@@ -12,6 +13,10 @@ class ArrowPath {
 
   final String id;
   final List<String> occupiedEdgeIds;
+
+  /// Tail-to-head ordered sequence of node IDs: [startNodeId, …, endNodeId].
+  final List<String> orderedNodeIds;
+
   final String startNodeId;
   final String endNodeId;
   final Direction direction;
@@ -32,6 +37,7 @@ class ArrowPath {
     return ArrowPath(
       id: id,
       occupiedEdgeIds: occupiedEdgeIds ?? this.occupiedEdgeIds,
+      orderedNodeIds: orderedNodeIds,
       startNodeId: startNodeId,
       endNodeId: endNodeId ?? this.endNodeId,
       direction: direction ?? this.direction,

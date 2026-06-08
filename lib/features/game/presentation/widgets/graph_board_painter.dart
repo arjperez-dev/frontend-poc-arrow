@@ -147,20 +147,23 @@ class GraphBoardPainter extends CustomPainter {
       ..color = color.withValues(alpha: opacity)
       ..strokeWidth = arrow.id == lastActivatedArrowId ? 14 : 12
       ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
 
-    for (final edgeId in arrow.occupiedEdgeIds) {
-      final edge = session.level.boardGraph.edgeById(edgeId);
-      if (edge == null) {
-        continue;
+    final path = Path();
+    var started = false;
+    for (final nodeId in arrow.orderedNodeIds) {
+      final pos = layout.positionOf(nodeId);
+      if (pos == null) continue;
+      final p = pos + translation;
+      if (!started) {
+        path.moveTo(p.dx, p.dy);
+        started = true;
+      } else {
+        path.lineTo(p.dx, p.dy);
       }
-      final from = layout.positionOf(edge.fromNodeId);
-      final to = layout.positionOf(edge.toNodeId);
-      if (from == null || to == null) {
-        continue;
-      }
-      canvas.drawLine(from + translation, to + translation, pathPaint);
     }
+    if (started) canvas.drawPath(path, pathPaint);
 
     final headPosition = layout.positionOf(arrow.endNodeId);
     if (headPosition != null) {

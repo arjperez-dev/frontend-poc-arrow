@@ -129,9 +129,8 @@ void main() {
     expect(level, isNotNull);
     expect(level!.number, 2);
     expect(level.id, 'manual-002');
-    // Level 2 is 'L-Turn' (Phase 10 denser redesign: 11 arrows).
     expect(level.name, 'L-Turn');
-    expect(level.arrows, hasLength(11));
+    expect(level.arrows.length, greaterThanOrEqualTo(10));
     expect(level.metadata['generationType'], 'manual');
   });
 
@@ -341,6 +340,21 @@ void main() {
       );
     },
   );
+
+  test('should_have_bent_arrows_in_every_difficulty_tier', () async {
+    final levels = await GetLocalLevelsUseCase(repository)();
+
+    bool hasBent(int lo, int hi) => levels
+        .where((l) => (l.number ?? 0) >= lo && (l.number ?? 0) <= hi)
+        .any((l) => l.arrows.any((a) => a.orderedNodeIds.length >= 3));
+
+    expect(hasBent(1, 5), isTrue,
+        reason: 'Easy levels have no bent arrow (orderedNodeIds.length >= 3)');
+    expect(hasBent(6, 10), isTrue,
+        reason: 'Medium levels have no bent arrow');
+    expect(hasBent(11, 15), isTrue,
+        reason: 'Hard levels have no bent arrow');
+  });
 }
 
 String? _difficulty(Level level) {

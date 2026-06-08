@@ -21,16 +21,11 @@ class GraphBoardHitTester {
         return arrow.id;
       }
 
-      for (final edgeId in arrow.occupiedEdgeIds.reversed) {
-        final edge = session.level.boardGraph.edgeById(edgeId);
-        if (edge == null) {
-          continue;
-        }
-        final from = layout.positionOf(edge.fromNodeId);
-        final to = layout.positionOf(edge.toNodeId);
-        if (from == null || to == null) {
-          continue;
-        }
+      final nodes = arrow.orderedNodeIds;
+      for (int i = nodes.length - 1; i > 0; i--) {
+        final from = layout.positionOf(nodes[i - 1]);
+        final to = layout.positionOf(nodes[i]);
+        if (from == null || to == null) continue;
         if (_distanceToSegment(position, from, to) <= hitSlop) {
           return arrow.id;
         }
