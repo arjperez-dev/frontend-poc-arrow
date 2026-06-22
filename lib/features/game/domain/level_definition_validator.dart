@@ -79,7 +79,13 @@ class LevelDefinitionValidator {
 
     final edgeDefById = {for (final e in definition.edges) e.id: e};
 
+    final coordToNodeId = <BoardCoordinate, String>{
+      for (final entry in nodesById.entries) entry.value.coordinate: entry.key,
+    };
+
     final arrowIds = <String>{};
+    final claimedNodes = <String, String>{};
+    final claimedEdges = <String, String>{};
     final arrows = <ArrowPath>[];
     for (final arrow in definition.arrows) {
       if (!arrowIds.add(arrow.id)) {
@@ -98,6 +104,118 @@ class LevelDefinitionValidator {
           );
         }
       }
+      // Collect all nodes covered by this arrow (start, end, edge endpoints).
+      final coveredNodes = <String>{
+        arrow.startNodeId,
+        arrow.endNodeId,
+        for (final eId in arrow.occupiedEdgeIds)
+          if (edgeDefById[eId] != null) ...[
+            edgeDefById[eId]!.fromNodeId,
+            edgeDefById[eId]!.toNodeId,
+          ],
+      };
+      for (final nodeId in coveredNodes) {
+        final prior = claimedNodes[nodeId];
+        if (prior != null) {
+          throw LevelDefinitionException(
+            'Node $nodeId is shared by arrows $prior and ${arrow.id}.',
+          );
+        }
+        claimedNodes[nodeId] = arrow.id;
+      }
+      for (final eId in arrow.occupiedEdgeIds) {
+        final prior = claimedEdges[eId];
+        if (prior != null) {
+          throw LevelDefinitionException(
+            'Edge $eId is shared by arrows $prior and ${arrow.id}.',
+          );
+        }
+        claimedEdges[eId] = arrow.id;
+      }
+
+      // Shape checks only apply to arrows with at least one body edge.
+      if (arrow.occupiedEdgeIds.isNotEmpty) {
+        // Cycle check: a simple path of N edges spans exactly N+1 distinct nodes.
+        final bodyNodeSet = <String>{};
+        for (final eId in arrow.occupiedEdgeIds) {
+          final e = edgeDefById[eId];
+          if (e != null) {
+            bodyNodeSet.add(e.fromNodeId);
+            bodyNodeSet.add(e.toNodeId);
+          }
+        }
+        if (arrow.occupiedEdgeIds.length >= bodyNodeSet.length) {
+          throw LevelDefinitionException(
+            'Arrow ${arrow.id} occupiedEdgeIds form a cycle.',
+          );
+        }
+
+        // Branching-head check: endNodeId must have exactly one incident body edge.
+        final headEdgeCount = arrow.occupiedEdgeIds.where((eId) {
+          final e = edgeDefById[eId];
+          return e != null &&
+              (e.fromNodeId == arrow.endNodeId || e.toNodeId == arrow.endNodeId);
+        }).length;
+        if (headEdgeCount != 1) {
+          throw LevelDefinitionException(
+            'Arrow ${arrow.id} head ${arrow.endNodeId} has $headEdgeCount incident '
+            'body edges (expected exactly 1).',
+          );
+        }
+
+        // Head-direction check: the body edge at the head must lead opposite to direction.
+        final dir = arrow.direction;
+        final headNode = nodesById[arrow.endNodeId]!;
+        final behindCoord = BoardCoordinate(
+          x: headNode.coordinate.x - dir.dx,
+          y: headNode.coordinate.y - dir.dy,
+        );
+        final hasBehindEdge = arrow.occupiedEdgeIds.any((eId) {
+          final e = edgeDefById[eId];
+          if (e == null) return false;
+          if (e.fromNodeId != arrow.endNodeId && e.toNodeId != arrow.endNodeId) {
+            return false;
+          }
+          final otherId =
+              e.fromNodeId == arrow.endNodeId ? e.toNodeId : e.fromNodeId;
+          final otherNode = nodesById[otherId];
+          return otherNode != null && otherNode.coordinate == behindCoord;
+        });
+        if (!hasBehindEdge) {
+          throw LevelDefinitionException(
+            'Arrow ${arrow.id} head direction ${arrow.direction} is inconsistent '
+            'with its body (body edge at head must lead opposite to direction).',
+          );
+        }
+
+        // Self-intersection check: the head sweep must never pass through a node
+        // that belongs to the same arrow's body. Such U/spiral arrows look like
+        // closed loops and exit confusingly by "crossing" their own tail.
+        final ownBody = <String>{
+          arrow.startNodeId,
+          for (final eId in arrow.occupiedEdgeIds)
+            if (edgeDefById[eId] != null) ...[
+              edgeDefById[eId]!.fromNodeId,
+              edgeDefById[eId]!.toNodeId,
+            ],
+        }..remove(arrow.endNodeId);
+        var sweepX = headNode.coordinate.x + dir.dx;
+        var sweepY = headNode.coordinate.y + dir.dy;
+        while (true) {
+          final sweepCoord = BoardCoordinate(x: sweepX, y: sweepY);
+          final sweepNodeId = coordToNodeId[sweepCoord];
+          if (sweepNodeId == null) break;
+          if (ownBody.contains(sweepNodeId)) {
+            throw LevelDefinitionException(
+              'Arrow ${arrow.id} head sweep in direction ${arrow.direction} '
+              'self-intersects own body at node $sweepNodeId.',
+            );
+          }
+          sweepX += dir.dx;
+          sweepY += dir.dy;
+        }
+      }
+
       arrows.add(
         ArrowPath(
           id: arrow.id,

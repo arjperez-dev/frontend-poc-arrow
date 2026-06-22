@@ -553,6 +553,111 @@ tier avg: easy=11.2 < medium=17.6 < hard=23.4 ✓  hard rects=0 ✓  ALL VALID: 
 
 **Note**: Level 2's test contract is now name=`'Level 2'`, arrows ≥ 10.
 
+## Phase 14 — Audio/Music/Localization Audit + Collision Validator
+
+### Task A — Audit Result
+
+All audio/music/localization code is **fully Clean Architecture compliant**. No refactor was needed.
+
+- `AudioPort` and `MusicPort` are pure Dart abstract interfaces in `lib/features/audio/application/`.
+- `GameAudioController` and `BackgroundMusicController` depend only on port abstractions — no concrete adapter imports in application or presentation layers.
+- `AudioPlayersAudioPort`, `AudioPlayersMusicPort`, `SystemSoundAudioPort` are correctly in infrastructure.
+- `l10n.yaml`, `pubspec.yaml`, ARB files, `MaterialApp` setup all correct.
+
+All Task A gaps listed in the phase prompt were already implemented before Phase 14:
+
+- `PlayerSettings.languageCode` (`String?`, null = system default) — present.
+- `SharedPreferencesSettingsRepository` — persists/reads `settings.languageCode`.
+- `SettingsScreenController.setLanguage()` — implemented.
+- `_LanguageSelectorCard` — interactive `DropdownButton<String?>` with English/Spanish/System options.
+- `MaterialApp` locale — reactive via `AppSettingsController`/`AppSettingsScope`; seeded from saved prefs in `app_bootstrap.dart`.
+
+Language switching is fully functional. No code changes were needed for Task A.
+
+### Task B — Collision Validator
+
+Added explicit node/edge disjointness enforcement so levels where two arrows share a node or edge are caught at parse time.
+
+**What Changed:**
+
+- **`tool/gen_levels.js`**: Added `noSharedNodes(dj)` function. Iterates all arrows, builds `ownerByNode` and `ownerByEdge` maps, returns conflict descriptions if any node or edge is claimed by more than one arrow. Called from `validateAll`; result shown in the `shared=` column of the per-level report. Failures set `bad=true` and cause exit code 1.
+- **`lib/features/game/domain/level_definition_validator.dart`**: Added node and edge disjointness check during arrow validation. Throws `LevelDefinitionException` if any node (startNodeId, endNodeId, or edge endpoint) or occupied edge is already claimed by a prior arrow.
+- **`test/features/game/game_test_fixtures.dart`**: Added `collisionDefinition()` helper — a 4-node horizontal graph (a→b→c→d) where `arrow-1` covers `[a,b]` and `arrow-2` covers `[c,d]` with no shared nodes. Arrow-1's head at b(1,0) sweeps right to c(2,0) which is in arrow-2's covered set → collision via coordinate sweep, not node-sharing.
+- **`test/features/game/domain/level_definition_validator_test.dart`**: Added `no_opposite_arrows_on_same_path` and `no_shared_nodes_between_arrows` — both assert `throwsA(isA<LevelDefinitionException>())` for levels with shared nodes.
+- **5 existing collision-test fixtures updated** (`exit_attempt_resolver_test.dart`, `move_arrow_use_case_test.dart` ×3, `game_screen_controller_test.dart`) to use `collisionDefinition()` instead of `basicDefinition()` with sharing arrows.
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 117/117 passed (108 pre-existing + 2 new validator tests + 7 updated fixture tests).
+- `node tool/gen_levels.js --validate-only`: all 15 levels valid, `shared=-` for every level, exit 0.
+
+### New Tests
+
+- `no_opposite_arrows_on_same_path`
+- `no_shared_nodes_between_arrows`
+
+### Limitations
+
+- Manual emulator validation (Phases 9–14) is still pending.
+- The `noSharedNodes` check is a validator enforcement, not a generator change — the generator already produces node-disjoint arrows by construction (DFS partition), so no levels were regenerated.
+
+### Phase 14 Task B — Runtime Escape Bug Fix (2026-06-22)
+
+**Root cause found and fixed.** The prior audit ("no live defect") was incomplete — it audited the resolver logic but did not scan the actual level data.
+
+**Root cause:** Hard-level boundary node removal (for irregular silhouettes) created interior coordinate **gaps** — coordinates inside the board's bounding box that have no node. When an arrow's head sweep hit such a gap, `nodeByCoordinate` returned `null`, the resolver treated it as the board boundary, and returned `escaped`. A visually adjacent arrow just past the gap was never reached. All 5 hard levels (11–15) had 3–9 arrows with this defect.
+
+**Fix:**
+- `tool/gen_levels.js`: added `hasInteriorGapExit(dj)` (checks all arrows for null-node exits within the bbox) and `flipInteriorGapArrows(dj)` (reverses arrows whose head sweep exits through a gap). Reversal uses `OPP[dirBetween(startNode, secondNode)]` — not `OPP[direction]` — to correctly compute the new exit direction for bent arrows (the first-step direction reversed, not the last-step direction reversed). Added `gapExit=` column to `validateAll`. `MAX_RETRIES.hard` raised 3000 → 8000.
+- `assets/levels/manual_levels.json`: regenerated — all 15 levels have `gapExit=-`. Hard levels use non-rectangular silhouettes with no interior gaps.
+- `test/features/game/infrastructure/manual_levels_test.dart`: added `should_have_no_interior_gap_exits` — sweeps every arrow's head path and asserts no null node inside the level's bounding box.
+
+**No runtime code changed.** `MovementResolver`, `BoardGraph`, and `LevelDefinitionValidator` are correct and untouched.
+
+**Verification:** `flutter analyze` — no issues. `flutter test` — 119/119 passed. `node tool/gen_levels.js --validate-only` — ALL VALID: true, `gapExit=-` for all 15 levels.
+
+## Phase 14.1 — Arrow Shape Fix: Self-Intersection (2026-06-22)
+
+### Problem (clarified)
+
+A visual defect: a pink arrow in Level 12 appeared to form a **closed rectangular loop**. The root cause was **self-intersection** — not a mathematical graph cycle. Arrow `a15` was a U-spiral path:
+
+- Path: `n3_3`(3,3) → `n3_4`(3,4) → `n2_4`(2,4) → `n1_4`(1,4) → `n1_3`(1,3) → `n2_3`(2,3) [head]
+- `direction: right`
+- Head sweep from `n2_3`(2,3) going right → hits `n3_3`(3,3) = the arrow's own `startNodeId`
+
+The arrow was a valid simple path (5 edges, 6 distinct nodes — not a graph cycle), but the head pointed directly back into its own tail. When tapped it would "exit" by sweeping through its own body — visually nonsensical and player-confusing.
+
+### Audit Findings
+
+- **Level 12 a15 confirmed.** Coordinate-scan script over all 15 levels found exactly 1 self-intersecting arrow: a15 in Level 12. All other 14 levels were clean.
+- **Generator mechanism.** The random DFS in `partitionNodes` can legally produce U-spiral paths where the last DFS step points back toward an earlier part of the path **in board space** (through empty coordinates). No graph edge connects them, but the coordinate sweep crosses the body. This is not caught by the DFS's `unvisited` set (which prevents graph-cycle revisits, not coordinate-sweep self-intersection).
+- **Validator gap.** The existing per-arrow checks (cycle, branching-head, head-direction) did not include a coordinate sweep simulation of the head's exit path against the arrow's own covered nodes.
+
+### Changes
+
+**`tool/gen_levels.js`:**
+- Added `hasSelfIntersectingArrow(dj)`: iterates all arrows; for each, builds the body node set (covered minus head), sweeps from the head by `DELTA[direction]` using `nodeAtCoord`, returns `true` if any swept coordinate hits an own-body node.
+- Wired into `generateLevel` after `hasInteriorGapExit` check: `if (hasSelfIntersectingArrow(dj)) continue;` — rejects and retries the level.
+- Added equivalent check in `structureErrors` arrow loop for `--validate-only` coverage: pushes `'arrow head sweep self-intersects own body at <nodeId> <arrowId>'`.
+
+**`lib/features/game/domain/level_definition_validator.dart`:**
+- Builds `coordToNodeId = Map<BoardCoordinate, String>` before the arrow loop (from `nodesById`).
+- Inside the arrow loop (after existing shape checks), sweeps from `headNode.coordinate + dir` by `(dir.dx, dir.dy)`; throws `LevelDefinitionException('Arrow X head sweep in direction D self-intersects own body at node Y.')` on first hit.
+
+**`test/features/game/domain/level_definition_validator_test.dart`:**
+- Added `should_reject_arrow_with_self_intersecting_sweep` — mirrors a15's topology: 6 nodes, 5-edge U-spiral, head at (1,0) direction=right sweeps into startNodeId at (2,0). Expects `LevelDefinitionException`.
+
+**`assets/levels/manual_levels.json`:** regenerated — all 15 levels free of self-intersecting arrows. Level 12 now has 26 arrows (was 20); hard tier average 22.8 (was 21.6).
+
+### Verification
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (121 pre-existing + 1 new).
+- `node tool/gen_levels.js --validate-only`: ALL VALID: true; self-intersection column clean for all 15 levels.
+- Coordinate-scan script confirms 0 self-intersecting arrows across all 15 levels.
+
 ## Next Recommended Phase
 
-Recommended next phase: final release preparation and a manual backend/emulator smoke test (auth, sync, leaderboard against the Docker backend), plus the pending manual emulator validation for the dense Phase 10 boards. Optionally, random graph-based level generation afterward.
+Recommended next phase: final release preparation and a manual backend/emulator smoke test (auth, sync, leaderboard against the Docker backend), plus the pending manual emulator validation for all phases (9–14.1). Optionally, random graph-based level generation afterward.

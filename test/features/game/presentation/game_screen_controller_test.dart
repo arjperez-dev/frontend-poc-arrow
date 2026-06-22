@@ -34,10 +34,12 @@ void main() {
   });
 
   test('should_record_collision_trace_and_flash_when_blocked', () async {
+    // arrow-1 covers [a,b], arrow-2 covers [c,d] — no shared nodes.
+    // Sweep from b(1,0) hits c(2,0) occupied by arrow-2 → collision.
     final controller = GameScreenController(
       levelNumber: 1,
       loadLevelByNumber: (_) async => buildLevel(
-        basicDefinition(
+        collisionDefinition(
           arrows: const [
             ArrowPathDefinition(
               id: 'arrow-1',
@@ -48,10 +50,10 @@ void main() {
             ),
             ArrowPathDefinition(
               id: 'arrow-2',
-              occupiedEdgeIds: ['bc'],
-              startNodeId: 'b',
+              occupiedEdgeIds: ['cd'],
+              startNodeId: 'd',
               endNodeId: 'c',
-              direction: Direction.right,
+              direction: Direction.left,
             ),
           ],
         ),

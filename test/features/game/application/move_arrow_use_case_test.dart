@@ -95,9 +95,10 @@ void main() {
   // -------------------------------------------------------------------------
 
   test('should_return_collision_when_path_is_blocked_by_another_arrow', () {
-    // arrow-1 head is at b going right; arrow-2 occupies bc → blocked.
+    // arrow-1 head at b going right; arrow-2 covers [c,d] — no shared nodes.
+    // Sweep from b(1,0) hits c(2,0) which is occupied by arrow-2 → collision.
     final session = buildSession(
-      basicDefinition(
+      collisionDefinition(
         arrows: const [
           ArrowPathDefinition(
             id: 'arrow-1',
@@ -108,10 +109,10 @@ void main() {
           ),
           ArrowPathDefinition(
             id: 'arrow-2',
-            occupiedEdgeIds: ['bc'],
-            startNodeId: 'b',
+            occupiedEdgeIds: ['cd'],
+            startNodeId: 'd',
             endNodeId: 'c',
-            direction: Direction.right,
+            direction: Direction.left,
           ),
         ],
       ),
@@ -152,7 +153,7 @@ void main() {
 
   test('should_leave_arrow_unchanged_after_collision', () {
     final session = buildSession(
-      basicDefinition(
+      collisionDefinition(
         arrows: const [
           ArrowPathDefinition(
             id: 'arrow-1',
@@ -163,10 +164,10 @@ void main() {
           ),
           ArrowPathDefinition(
             id: 'arrow-2',
-            occupiedEdgeIds: ['bc'],
-            startNodeId: 'b',
+            occupiedEdgeIds: ['cd'],
+            startNodeId: 'd',
             endNodeId: 'c',
-            direction: Direction.right,
+            direction: Direction.left,
           ),
         ],
       ),
@@ -245,23 +246,19 @@ void main() {
   // -------------------------------------------------------------------------
 
   test('should_return_already_escaped_when_arrow_is_already_escaped', () {
-    // Two arrows: arrow-1 can exit right; arrow-2 is blocked so session
-    // stays in playing state after arrow-1 escapes.
+    // arrow-1 covers [c,d] with head at d going right; d(3,0) has no right
+    // neighbor → exits immediately. arrow-2 covers [a,b]; no shared nodes.
+    // After arrow-1 escapes the session stays playing (arrow-2 not yet tapped).
     final session = buildSession(
-      basicDefinition(
+      collisionDefinition(
         arrows: const [
           ArrowPathDefinition(
             id: 'arrow-1',
-            occupiedEdgeIds: ['bc'],
-            startNodeId: 'b',
-            endNodeId: 'c',
+            occupiedEdgeIds: ['cd'],
+            startNodeId: 'c',
+            endNodeId: 'd',
             direction: Direction.right,
           ),
-          // arrow-2 goes down from b; bd exists but no further down → exits
-          // via the down direction. Use a direction with no neighbor to block
-          // it: direction=left from a has no left neighbor → exits immediately.
-          // To truly keep it active, use a direction where it collides.
-          // Simplest: arrow-2 at ab going right is blocked by arrow-1 on bc.
           ArrowPathDefinition(
             id: 'arrow-2',
             occupiedEdgeIds: ['ab'],
@@ -272,7 +269,7 @@ void main() {
         ],
       ),
     );
-    // Escape arrow-1 (path b→c→exit is clear; arrow-2 is on ab, not bc).
+    // Escape arrow-1 (head at d(3,0), no right-neighbor → escapes).
     final afterEscape = useCase.execute(
       session: session,
       command: const MoveArrowCommand(arrowId: 'arrow-1'),

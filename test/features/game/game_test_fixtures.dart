@@ -47,3 +47,30 @@ Level buildLevel(LevelDefinition definition) {
 GameSession buildSession(LevelDefinition definition) {
   return GameSession.start(buildLevel(definition));
 }
+
+// Four-node horizontal graph: a(0,0)—b(1,0)—c(2,0)—d(3,0).
+// Use for collision tests where arrow-1 covers [a,b] and arrow-2 covers [c,d]:
+// arrow-1's head at b sweeps right to c, which is occupied by arrow-2 → collision.
+// No nodes are shared between the two arrows.
+LevelDefinition collisionDefinition({
+  required List<ArrowPathDefinition> arrows,
+}) {
+  return LevelDefinition(
+    id: 'collision-test',
+    name: 'Collision Test',
+    nodes: const [
+      GraphNodeDefinition(id: 'a', x: 0, y: 0),
+      GraphNodeDefinition(id: 'b', x: 1, y: 0),
+      GraphNodeDefinition(id: 'c', x: 2, y: 0),
+      GraphNodeDefinition(id: 'd', x: 3, y: 0),
+    ],
+    edges: const [
+      GraphEdgeDefinition(id: 'ab', fromNodeId: 'a', toNodeId: 'b'),
+      GraphEdgeDefinition(id: 'bc', fromNodeId: 'b', toNodeId: 'c'),
+      GraphEdgeDefinition(id: 'cd', fromNodeId: 'c', toNodeId: 'd'),
+    ],
+    arrows: arrows,
+    blockedEdgeIds: const [],
+    metadata: const {'difficulty': 'test'},
+  );
+}

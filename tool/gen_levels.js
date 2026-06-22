@@ -37,7 +37,7 @@ const ASSET = path.join(__dirname, '..', 'assets', 'levels', 'manual_levels.json
 // algorithm finds a valid varied level without falling back to a deterministic
 // layout. This is a build-time tool — spending a few seconds per hard level
 // is acceptable.
-const MAX_RETRIES = { easy: 200, medium: 200, hard: 3000 };
+const MAX_RETRIES = { easy: 200, medium: 200, hard: 8000 };
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -344,15 +344,31 @@ function generateLevel(number, name, difficulty, meta, baseSeed) {
     // when the removal leaves parts joined only through removed horizontal edges).
     if (connectedComponents(dj) !== 1) continue;
 
-    // Direction variety: require at least one vertical arrow; cap any single
-    // direction at 60% so no axis dominates the level.
+    // Fix interior gap exits by reversing affected arrows before checking
+    // direction variety. An interior gap exit occurs when an arrow's head sweep
+    // hits a removed boundary node inside the bounding box. Reversing the arrow
+    // makes it exit from the opposite end, which is typically an interior node
+    // with no gap in the opposite direction. After reversal the body-behind-head
+    // invariant still holds (verified algebraically).
+    flipInteriorGapArrows(dj);
+
+    // Verify no gaps remain after flipping (both ends near removed nodes).
+    if (hasInteriorGapExit(dj)) continue;
+
+    // Reject any arrow whose head sweep hits its own body (self-intersection).
+    // This catches U/spiral paths where the exit direction points back into the
+    // arrow's own tail — visually a "closed loop" defect.
+    if (hasSelfIntersectingArrow(dj)) continue;
+
+    // Direction variety check (after flip since directions may have changed):
+    // require at least one vertical arrow; cap any single direction at 60%.
     const dirCounts = {};
     for (const a of dj.arrows) dirCounts[a.direction] = (dirCounts[a.direction] || 0) + 1;
     const hasVertical = (dirCounts['up'] || 0) + (dirCounts['down'] || 0) > 0;
     const maxDirFrac = Math.max(...Object.values(dirCounts)) / dj.arrows.length;
     if (!hasVertical || maxDirFrac > 0.60) continue;
 
-    // Greedy solvability.
+    // Greedy solvability (after flip, directions changed — re-evaluate).
     if (!solvableGreedy(dj)) continue;
 
     console.log(`  #${number} attempt ${attempt + 1}: ${n} arrows, ${totalNodes} nodes, ${W}x${H}`);
@@ -567,6 +583,31 @@ function structureErrors(dj) {
       }
       if (!behind) errs.push('arrow head not at exit end ' + a.id);
     }
+    // Cycle check: N edges over a simple path span N+1 distinct nodes.
+    const bodyNodes = new Set();
+    for (const eId of a.occupiedEdges) {
+      const e = byId.edges[eId]; if (!e) continue;
+      bodyNodes.add(e.fromNodeId); bodyNodes.add(e.toNodeId);
+    }
+    if (a.occupiedEdges.length >= bodyNodes.size) errs.push('arrow body forms a cycle ' + a.id);
+    // Self-intersection check: head sweep must not hit own body.
+    const head2 = byId.nodes[a.endNodeId];
+    if (head2) {
+      const body2 = new Set([a.startNodeId]);
+      for (const eId of a.occupiedEdges) {
+        const e = byId.edges[eId]; if (!e) continue;
+        body2.add(e.fromNodeId); body2.add(e.toNodeId);
+      }
+      body2.delete(a.endNodeId);
+      const [dx2, dy2] = DELTA[a.direction] || [0, 0];
+      let cx2 = head2.x + dx2, cy2 = head2.y + dy2;
+      while (true) {
+        const nId2 = nodeAtCoord(byId, cx2, cy2);
+        if (!nId2) break;
+        if (body2.has(nId2)) { errs.push('arrow head sweep self-intersects own body at ' + nId2 + ' ' + a.id); break; }
+        cx2 += dx2; cy2 += dy2;
+      }
+    }
   }
   return errs;
 }
@@ -574,6 +615,125 @@ function shapeOf(dj) {
   const xs = dj.nodes.map(n => n.x), ys = dj.nodes.map(n => n.y);
   const w = Math.max(...xs) - Math.min(...xs) + 1, h = Math.max(...ys) - Math.min(...ys) + 1;
   return { w, h, rect: dj.nodes.length === w * h };
+}
+// Returns true if any arrow's head sweep hits a node that belongs to the same
+// arrow's own body (self-intersection). Such arrows look like closed loops and
+// would confusingly "exit" by passing through their own tail/body nodes.
+function hasSelfIntersectingArrow(dj) {
+  const byId = indexDj(dj);
+  for (const a of dj.arrows) {
+    const head = byId.nodes[a.endNodeId];
+    if (!head) continue;
+    // Covered body nodes excluding the head itself.
+    const body = new Set([a.startNodeId]);
+    for (const eId of a.occupiedEdges) {
+      const e = byId.edges[eId]; if (!e) continue;
+      body.add(e.fromNodeId); body.add(e.toNodeId);
+    }
+    body.delete(a.endNodeId);
+    const [dx, dy] = DELTA[a.direction] || [0, 0];
+    let cx = head.x + dx, cy = head.y + dy;
+    while (true) {
+      const nId = nodeAtCoord(byId, cx, cy);
+      if (!nId) break;
+      if (body.has(nId)) return true;
+      cx += dx; cy += dy;
+    }
+  }
+  return false;
+}
+
+// Returns true if any arrow's head sweep exits through a coordinate that is
+// INSIDE the level's bounding box but has no node (a boundary-removal gap).
+// Such gaps create invisible "escape holes" that confuse players: another arrow
+// visually ahead of the escaping arrow appears to block it, but the resolver
+// exits at the gap before reaching the blocker.
+function hasInteriorGapExit(dj) {
+  const byId = indexDj(dj);
+  const xs = dj.nodes.map(n => n.x), ys = dj.nodes.map(n => n.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  for (const arrow of dj.arrows) {
+    const head = byId.nodes[arrow.endNodeId];
+    if (!head) continue;
+    const [dx, dy] = DELTA[arrow.direction];
+    let cx = head.x, cy = head.y;
+    while (true) {
+      cx += dx; cy += dy;
+      if (cx < minX || cx > maxX || cy < minY || cy > maxY) break; // true boundary
+      if (!nodeAtCoord(byId, cx, cy)) return true; // interior gap
+    }
+  }
+  return false;
+}
+
+// Reverse any arrow whose head sweep exits through an interior gap so that its
+// head exits from the OTHER end instead. The body-behind-head invariant is
+// preserved by computing the new exit direction from the FIRST step of the
+// original path (not OPP[originalDirection], which would be wrong for bent
+// arrows). Example: bent path A(0,0)→B(1,0)→C(1,1)→D(1,2) direction=down.
+// After reversal: head=A, new direction=OPP[dirBetween(A,B)]="left". The body
+// edge A-B leads from A to B(1,0), which is at A + (1,0) = A - delta(left) ✓.
+// Mutates dj.arrows in place. Returns true if any arrow was reversed.
+function flipInteriorGapArrows(dj) {
+  const OPP = { right: 'left', left: 'right', up: 'down', down: 'up' };
+  const byId = indexDj(dj);
+  const xs = dj.nodes.map(n => n.x), ys = dj.nodes.map(n => n.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  let flipped = false;
+  for (const arrow of dj.arrows) {
+    const head = byId.nodes[arrow.endNodeId];
+    if (!head) continue;
+    const [dx, dy] = DELTA[arrow.direction];
+    let cx = head.x, cy = head.y, gap = false;
+    while (true) {
+      cx += dx; cy += dy;
+      if (cx < minX || cx > maxX || cy < minY || cy > maxY) break;
+      if (!nodeAtCoord(byId, cx, cy)) { gap = true; break; }
+    }
+    if (!gap) continue;
+    // Compute new direction from the FIRST step of the original path.
+    // The first occupiedEdge connects startNodeId to its adjacent node;
+    // the new exit direction is opposite the first step's direction.
+    const firstEdge = byId.edges[arrow.occupiedEdges[0]];
+    if (!firstEdge) continue;
+    const secondNodeId = firstEdge.fromNodeId === arrow.startNodeId
+      ? firstEdge.toNodeId : firstEdge.fromNodeId;
+    const startNode = byId.nodes[arrow.startNodeId];
+    const secondNode = byId.nodes[secondNodeId];
+    if (!startNode || !secondNode) continue;
+    const firstStepDir = dirBetween(startNode, secondNode);
+    if (!firstStepDir) continue;
+    const newDir = OPP[firstStepDir];
+    const tmp = arrow.startNodeId;
+    arrow.startNodeId = arrow.endNodeId;
+    arrow.endNodeId = tmp;
+    arrow.direction = newDir;
+    flipped = true;
+  }
+  return flipped;
+}
+
+// Returns an array of conflict descriptions if any two arrows share a node or
+// edge, otherwise null. Two arrows sharing a node means their occupied shapes
+// (startNodeId + endNodeId + edge endpoints) overlap.
+function noSharedNodes(dj) {
+  const byId = indexDj(dj);
+  const ownerByNode = {}, ownerByEdge = {};
+  const conflicts = [];
+  for (const a of dj.arrows) {
+    const nodes = coveredNodes(dj, a, byId);
+    for (const n of nodes) {
+      if (ownerByNode[n]) conflicts.push(`node ${n} shared by ${ownerByNode[n]} and ${a.id}`);
+      else ownerByNode[n] = a.id;
+    }
+    for (const eId of a.occupiedEdges) {
+      if (ownerByEdge[eId]) conflicts.push(`edge ${eId} shared by ${ownerByEdge[eId]} and ${a.id}`);
+      else ownerByEdge[eId] = a.id;
+    }
+  }
+  return conflicts.length ? conflicts : null;
 }
 
 function validateAll(levels) {
@@ -584,6 +744,8 @@ function validateAll(levels) {
     diffByNum[lvl.number] = diff;
     const se = structureErrors(dj), free = noFreeNodes(dj);
     const sv = solvableGreedy(dj), sh = shapeOf(dj);
+    const shared = noSharedNodes(dj);
+    const gapExit = hasInteriorGapExit(dj);
     const components = connectedComponents(dj), n = dj.arrows.length;
     if (arrowsByTier[diff]) arrowsByTier[diff].push(n);
     const band = DENSITY[diff]; let densityErr = '';
@@ -591,7 +753,7 @@ function validateAll(levels) {
       if (n < band.min || n > band.max) densityErr = `density ${n} out of [${band.min},${band.max}]`;
       else if (band.warn && n > band.warn) warnings.push(`#${lvl.number} dense (${n} arrows, >${band.warn})`);
     }
-    const bad = se.length || free || !sv || densityErr || components !== 1;
+    const bad = se.length || free || !sv || densityErr || components !== 1 || shared || gapExit;
     if (bad) ok = false;
     console.log(
       '#' + String(lvl.number).padStart(2) + ' ' + (lvl.name || '').padEnd(15) +
@@ -602,6 +764,8 @@ function validateAll(levels) {
       ' rect=' + (sh.rect ? 'Y' : 'n') +
       ' comp=' + components +
       ' free=' + (free ? JSON.stringify(free) : '-') +
+      ' shared=' + (shared ? JSON.stringify(shared) : '-') +
+      ' gapExit=' + (gapExit ? 'Y' : '-') +
       ' solvable=' + sv +
       (components !== 1 ? ' DISCONNECTED(' + components + ')' : '') +
       (densityErr ? ' ' + densityErr.toUpperCase() : '') +

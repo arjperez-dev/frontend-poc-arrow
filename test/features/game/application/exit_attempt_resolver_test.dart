@@ -75,9 +75,10 @@ void main() {
   // -------------------------------------------------------------------------
 
   test('should_collide_when_another_arrow_occupies_path_ahead', () {
-    // arrow-1 head at b going right; arrow-2 occupies bc → blocked.
+    // arrow-1 head at b going right; arrow-2 occupies [c,d] — no shared nodes.
+    // Sweep from b(1,0) steps to c(2,0) which is in arrow-2's covered set → blocked.
     final session = buildSession(
-      basicDefinition(
+      collisionDefinition(
         arrows: const [
           ArrowPathDefinition(
             id: 'arrow-1',
@@ -88,15 +89,42 @@ void main() {
           ),
           ArrowPathDefinition(
             id: 'arrow-2',
-            occupiedEdgeIds: ['bc'],
-            startNodeId: 'b',
+            occupiedEdgeIds: ['cd'],
+            startNodeId: 'd',
             endNodeId: 'c',
-            direction: Direction.right,
+            direction: Direction.left,
           ),
         ],
       ),
     );
     final arrow = session.arrowById('arrow-1')!;
+    expect(resolver.resolve(session: session, arrow: arrow), ExitAttemptOutcome.collision);
+  });
+
+  test('should_collide_when_left_pointing_arrow_faces_right_pointing_arrow', () {
+    // Symmetric of the opposite-direction test: tapping arrow-2 (head=c, left).
+    // Sweep from c(2,0) leftward → b(1,0) ∈ arrow-1's covered set → collision.
+    final session = buildSession(
+      collisionDefinition(
+        arrows: const [
+          ArrowPathDefinition(
+            id: 'arrow-1',
+            occupiedEdgeIds: ['ab'],
+            startNodeId: 'a',
+            endNodeId: 'b',
+            direction: Direction.right,
+          ),
+          ArrowPathDefinition(
+            id: 'arrow-2',
+            occupiedEdgeIds: ['cd'],
+            startNodeId: 'd',
+            endNodeId: 'c',
+            direction: Direction.left,
+          ),
+        ],
+      ),
+    );
+    final arrow = session.arrowById('arrow-2')!;
     expect(resolver.resolve(session: session, arrow: arrow), ExitAttemptOutcome.collision);
   });
 
@@ -129,9 +157,9 @@ void main() {
 
   test('should_escape_when_head_clear_and_body_sweep_would_overlap_another_arrow', () {
     // Head-only rule: only the head collides; body adjacency is not a collision.
-    // Arrow A (a-b-c on row 0) exits DOWN. Head c sweeps to f (free).
-    // Body node a is above d which is occupied by B — but under head-only physics
-    // that is irrelevant. Arrow A must escape.
+    // Arrow A (a-b-c on row 0) exits RIGHT. Head c(2,0) sweeps off the right edge.
+    // Arrow B sits on d-e (row 1, left of c). A's body node a is above d (B) —
+    // under head-only physics that is irrelevant. Arrow A must escape.
     final session = buildSession(_grid3x2(
       arrows: const [
         ArrowPathDefinition(
@@ -139,7 +167,7 @@ void main() {
           occupiedEdgeIds: ['a-b', 'b-c'],
           startNodeId: 'a',
           endNodeId: 'c',
-          direction: Direction.down,
+          direction: Direction.right,
         ),
         ArrowPathDefinition(
           id: 'B',
@@ -159,8 +187,8 @@ void main() {
   });
 
   test('should_escape_when_full_shape_sweep_is_clear', () {
-    // Same board but B sits on row 0 far away; A exits down with all body rays
-    // clear (no node below row 1).
+    // Arrow A (d-e-f on row 1) exits RIGHT. Head f(2,1) sweeps off the right edge.
+    // No blocker on the right → escaped.
     final session = buildSession(_grid3x2(
       arrows: const [
         ArrowPathDefinition(
@@ -168,7 +196,7 @@ void main() {
           occupiedEdgeIds: ['d-e', 'e-f'],
           startNodeId: 'd',
           endNodeId: 'f',
-          direction: Direction.down,
+          direction: Direction.right,
         ),
       ],
     ));

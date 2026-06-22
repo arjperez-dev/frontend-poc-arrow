@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend_poc_arrow/features/game/domain/board_coordinate.dart';
 import 'package:frontend_poc_arrow/features/game/application/get_local_level_by_number_use_case.dart';
 import 'package:frontend_poc_arrow/features/game/application/get_local_levels_use_case.dart';
 import 'package:frontend_poc_arrow/features/game/application/movement_resolver.dart';
@@ -340,6 +341,46 @@ void main() {
       );
     },
   );
+
+  test('should_have_no_interior_gap_exits', () async {
+    // An arrow must not exit through a coordinate that is inside the level's
+    // bounding box but has no node. Such gaps (from hard-level boundary removal)
+    // create invisible escape holes: the player sees another arrow visually ahead
+    // but the resolver exits at the gap before reaching it.
+    final levels = await GetLocalLevelsUseCase(repository)();
+    for (final level in levels) {
+      final graph = level.boardGraph;
+      final nodes = graph.nodes;
+      final xs = nodes.map((n) => n.coordinate.x);
+      final ys = nodes.map((n) => n.coordinate.y);
+      final minX = xs.reduce((a, b) => a < b ? a : b);
+      final maxX = xs.reduce((a, b) => a > b ? a : b);
+      final minY = ys.reduce((a, b) => a < b ? a : b);
+      final maxY = ys.reduce((a, b) => a > b ? a : b);
+
+      for (final arrow in level.arrows) {
+        final head = graph.nodeById(arrow.endNodeId)!;
+        final dir = arrow.direction;
+        var cx = head.coordinate.x;
+        var cy = head.coordinate.y;
+        while (true) {
+          cx += dir.dx;
+          cy += dir.dy;
+          if (cx < minX || cx > maxX || cy < minY || cy > maxY) break;
+          final next = graph.nodeByCoordinate(
+            BoardCoordinate(x: cx, y: cy),
+          );
+          expect(
+            next,
+            isNotNull,
+            reason: 'Level ${level.number} arrow ${arrow.id} exits through '
+                'interior gap at ($cx,$cy) — boundary-removal hole makes '
+                'another arrow appear to block but resolver exits early',
+          );
+        }
+      }
+    }
+  });
 
   test('should_have_bent_arrows_in_every_difficulty_tier', () async {
     final levels = await GetLocalLevelsUseCase(repository)();
