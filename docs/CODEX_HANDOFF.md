@@ -658,6 +658,122 @@ The arrow was a valid simple path (5 edges, 6 distinct nodes — not a graph cyc
 - `node tool/gen_levels.js --validate-only`: ALL VALID: true; self-intersection column clean for all 15 levels.
 - Coordinate-scan script confirms 0 self-intersecting arrows across all 15 levels.
 
+## Phase 15 — Audio Playback Stability Fix (2026-06-22/23)
+
+### Context
+
+User-reported, real-device bugs (not covered by the Phase 14 Task A audit, which
+checked Clean Architecture compliance only — not runtime audio behavior):
+intermittent crashes, music and SFX silencing each other, crackling/distorted
+playback, and victory/defeat SFX playing back sped up. **This corrects the
+Phase 14 Task A conclusion** ("fully compliant, no changes needed") — the code
+was architecturally clean but had live runtime defects the audit didn't check
+for.
+
+### Root Causes Found
+
+1. **Crash (resource leak):** `AudioDependencies` constructed a brand-new
+   `AudioPlayer` pair every time `GameScreen` mounted (every level/retry/next
+   level); nothing ever called the existing `dispose()` methods on
+   `AudioPlayersAudioPort`/`AudioPlayersMusicPort`. Native players accumulated
+   across a session.
+2. **Music/SFX silencing each other:** the SFX port set an explicit Android
+   `AudioContext` (`gainTransientMayDuck`) on every `play()` call; the music
+   port never set any `AudioContext` at all, leaving it on undocumented
+   platform defaults that don't reliably negotiate ducking with the SFX
+   stream's transient focus request.
+3. **Crackling/distortion:** `AudioPlayersMusicPort._musicVolume` was `1.1` —
+   above the `0.0–1.0` range the underlying `audioplayers` plugin passes
+   straight into Android's native `MediaPlayer.setVolume()` unclamped.
+4. **Victory/defeat sped up:** all four SFX events shared one `AudioPlayer`
+   instance with `stop()` immediately followed by `play()` on every call, no
+   debounce — concurrent/rapid events raced each other. Byte-level MP3 header
+   inspection also found `victory.mp3` encoded at 48000 Hz while
+   `move.mp3`/`blocked.mp3`/`defeat.mp3` were at 44100 Hz, compounding the race
+   when the shared player switched between mismatched-rate assets.
+5. **(Found after the first fix round) Next Level button stops music:**
+   `_openNextLevel()` uses `Navigator.pushReplacementNamed`, which disposes the
+   old `GameScreen` while mounting a new one. Once music ownership moved to a
+   singleton (fix for #1), the old screen's `stopMusic()` and the new screen's
+   `startMusic()` raced on the same singleton — whichever ran last won, and
+   the old screen's stop tended to land after the new screen's start.
+
+### What Changed
+
+- **`lib/features/audio/infrastructure/audio_manager.dart` (new):** app-lifetime
+  `AudioManager` singleton. Created once; `GameAudioController` and
+  `BackgroundMusicController` are built lazily and cached, never recreated per
+  screen. `startMusic()`/`stopMusic()` are reference-counted (`_musicClaims`)
+  so overlapping claims from an old screen disposing and a new screen starting
+  (the `pushReplacementNamed` race) don't kill music a still-active screen
+  wants playing — only the first claim starts playback and only the last
+  release stops it.
+- **`lib/features/audio/infrastructure/audio_dependencies.dart` (deleted):** the
+  per-screen factory that caused the leak; superseded by `AudioManager`.
+- **`lib/features/audio/infrastructure/audio_players_audio_port.dart`:** SFX
+  now uses a small pool of 3 `AudioPlayer`s (round-robin) instead of one
+  shared instance, so concurrent/rapid SFX events no longer race a single
+  player's `stop()`/`play()`. `AudioContext`/volume are set once per pooled
+  player at construction instead of on every `play()` call. `usageType`
+  corrected from `notification` to `game`.
+- **`lib/features/audio/infrastructure/audio_players_music_port.dart`:**
+  `_musicVolume` clamped `1.1` → `1.0`, then tuned to `0.6` per user request
+  (music should sit quieter than SFX). Added an explicit `AudioContext`
+  (`contentType: music`, `usageType: media`, `audioFocus: gain`) so the OS
+  properly ducks (not kills) this stream against the SFX port's
+  `gainTransientMayDuck` request.
+- **`lib/features/game/presentation/game_screen.dart`:** wired to
+  `AudioManager.instance` instead of `AudioDependencies`. Test injection seams
+  (`widget.playGameAudio`, `widget.backgroundMusicController`) preserved
+  unchanged — no test files needed modification.
+- **`assets/audio/victory.mp3`:** re-encoded 48000 Hz → 44100 Hz (`ffmpeg
+  -ar 44100 -codec:a libmp3lame -q:a 2`) to match the other three SFX assets;
+  duration unchanged (4.203s). `ffmpeg` was installed via `scoop` (user-level,
+  no admin) after `choco install ffmpeg` failed on a lock-file permission error
+  — `choco` requires an elevated shell this environment doesn't have.
+
+### Files Touched
+
+- `lib/features/audio/infrastructure/audio_manager.dart` (new)
+- `lib/features/audio/infrastructure/audio_dependencies.dart` (deleted)
+- `lib/features/audio/infrastructure/audio_players_audio_port.dart`
+- `lib/features/audio/infrastructure/audio_players_music_port.dart`
+- `lib/features/game/presentation/game_screen.dart`
+- `assets/audio/victory.mp3` (binary re-encode)
+- `lib/features/audio/application/{background_music_controller,game_audio_event,music_port}.dart` (formatting only, via `dart format`)
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (no new tests; same count as Phase 14.1 — see Limitations).
+- `node tool/gen_levels.js --validate-only`: not applicable (no level files touched); re-ran anyway — ALL VALID: true, unaffected.
+
+### New Tests
+
+- None. See Limitations.
+
+### Limitations
+
+- **No automated regression test was added.** All five root causes are
+  real-device/native-plugin behaviors (focus negotiation, native volume
+  clamping, player resource lifecycle, sample-rate handling) that the
+  existing fake-based unit tests (`_FakeAudioPort`, `_FakeSettingsRepository`)
+  cannot exercise. Manual on-device verification is required to confirm the
+  crash, ducking, distortion, and playback-rate fixes actually hold under real
+  Android/iOS audio focus behavior.
+- Manual emulator/device validation for this phase, and the still-pending
+  manual validation for Phases 9–14.1, has not been performed.
+- The SFX pool size (3) and music volume (0.6) are reasonable starting values,
+  not tuned against a real device by ear; expect follow-up adjustment requests.
+
 ## Next Recommended Phase
 
-Recommended next phase: final release preparation and a manual backend/emulator smoke test (auth, sync, leaderboard against the Docker backend), plus the pending manual emulator validation for all phases (9–14.1). Optionally, random graph-based level generation afterward.
+Recommended next phase: manual on-device validation of the Phase 15 audio fix
+(confirm no crash across many level transitions, music ducks instead of
+silencing under SFX, no crackling, victory/defeat play at normal speed, music
+survives the Next Level button) — this is the first phase in this log where
+the underlying defects are physically un-testable without a real device/
+emulator. After that: final release preparation and the long-pending manual
+backend/emulator smoke test (auth, sync, leaderboard against the Docker
+backend) for Phases 9–14.1. Optionally, random graph-based level generation
+afterward.

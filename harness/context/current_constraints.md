@@ -27,6 +27,15 @@ Check every item on this list before starting any phase. Update this file when c
 - `--validate-only` is always safe and reads without writing.
 - **Level 2 test contract**: name='Level 2', arrow count ≥ 10. Do not change level 2's name or arrow count below the floor without updating `test/features/game/infrastructure/manual_levels_test.dart`.
 
+## Audio (Phase 15)
+
+- `AudioManager` (`lib/features/audio/infrastructure/audio_manager.dart`) is an app-lifetime singleton. Do not recreate `GameAudioController`/`BackgroundMusicController`/the underlying `AudioPlayer`s per screen — that recreate-per-screen pattern (the deleted `AudioDependencies`) is what caused the original crash/leak. New screens must call `AudioManager.instance`, not build their own ports.
+- `startMusic()`/`stopMusic()` are reference-counted (`_musicClaims`). Any new navigation path that can dispose one `GameScreen` while mounting another (e.g. another `pushReplacement*` use) relies on this counting to avoid the old screen's stop killing the new screen's music — do not bypass it with a direct `MusicPort.stop()`/`start()` call.
+- SFX (`AudioPlayersAudioPort`) uses a pool of 3 `AudioPlayer`s, not one shared instance. Do not collapse it back to a single player — that caused crackling/sped-up playback when events fired close together.
+- Music volume (`AudioPlayersMusicPort._musicVolume`) must stay within `0.0–1.0` — the underlying plugin passes it unclamped into native `MediaPlayer.setVolume`; values above 1.0 cause audible clipping. Current value is `0.6` (SFX volume in `AudioPlayersAudioPort._effectsVolume` is `0.25`); the music multiplier is numerically higher than the SFX multiplier even though music should sound quieter, because perceived loudness depends on each asset's mastering level, not just the multiplier — retune both by ear on a real device, don't assume the numbers alone reflect relative loudness.
+- All SFX assets in `assets/audio/` (`move.mp3`, `blocked.mp3`, `victory.mp3`, `defeat.mp3`) must stay at the same sample rate (44100 Hz) — a mismatch (`victory.mp3` was previously 48000 Hz) contributed to playback-rate artifacts when assets share a pooled player.
+- A Clean-Architecture-compliance audit of audio/storage/network adapter code is **not** a substitute for a real-device behavior check — Phase 14 Task A audited layering only and missed five live runtime defects in the audio adapters. Don't repeat that mistake for other adapter code.
+
 ## Git
 
 - Never work on `main`.
@@ -41,4 +50,4 @@ Check every item on this list before starting any phase. Update this file when c
 
 ---
 
-*Last updated: 2026-06-19 (Phase 12 — coordinate-based sweep fix; levels regenerated)*
+*Last updated: 2026-06-23 (Phase 15 — audio playback stability: AudioManager singleton, SFX pool, music volume/focus, victory.mp3 sample rate)*

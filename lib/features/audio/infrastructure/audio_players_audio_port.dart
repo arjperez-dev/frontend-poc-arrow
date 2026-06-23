@@ -6,15 +6,28 @@ import '../application/game_audio_event.dart';
 
 /// Real sound-effects adapter backed by the `audioplayers` package.
 /// Each [GameAudioEvent] maps to a short asset under `assets/audio/`.
+///
+/// Uses a small pool of players instead of one shared instance: SFX events
+/// can fire in quick succession (e.g. move then blocked), and stop()+play()
+/// on the same player while the previous clip is still draining is what
+/// produced the crackling/sped-up playback this class used to have.
 class AudioPlayersAudioPort implements AudioPort {
-  AudioPlayersAudioPort() : _player = AudioPlayer();
+  AudioPlayersAudioPort({int poolSize = 3})
+    : _players = List.generate(poolSize, (_) => AudioPlayer()) {
+    for (final player in _players) {
+      player.setAudioContext(_audioContext);
+      player.setVolume(_effectsVolume);
+    }
+  }
 
-  final AudioPlayer _player;
+  final List<AudioPlayer> _players;
+  int _nextPlayerIndex = 0;
+
   static const double _effectsVolume = 0.25;
   static final AudioContext _audioContext = AudioContext(
     android: const AudioContextAndroid(
       contentType: AndroidContentType.sonification,
-      usageType: AndroidUsageType.notification,
+      usageType: AndroidUsageType.game,
       audioFocus: AndroidAudioFocus.gainTransientMayDuck,
     ),
     iOS: AudioContextIOS(
@@ -36,15 +49,19 @@ class AudioPlayersAudioPort implements AudioPort {
     if (asset == null) {
       return;
     }
+    final player = _players[_nextPlayerIndex];
+    _nextPlayerIndex = (_nextPlayerIndex + 1) % _players.length;
     try {
-      await _player.setAudioContext(_audioContext);
-      await _player.setVolume(_effectsVolume);
-      await _player.stop();
-      await _player.play(AssetSource(asset));
+      await player.stop();
+      await player.play(AssetSource(asset));
     } catch (error) {
       debugPrint('AudioPlayersAudioPort failed for $event: $error');
     }
   }
 
-  Future<void> dispose() => _player.dispose();
+  Future<void> dispose() async {
+    for (final player in _players) {
+      await player.dispose();
+    }
+  }
 }

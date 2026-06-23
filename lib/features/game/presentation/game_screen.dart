@@ -3,7 +3,7 @@ import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart
 import '../../audio/application/background_music_controller.dart';
 import '../../../core/routing/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../audio/infrastructure/audio_dependencies.dart';
+import '../../audio/infrastructure/audio_manager.dart';
 import '../domain/game_session.dart';
 import '../infrastructure/local_level_dependencies.dart';
 import '../../progress/infrastructure/local_progress_dependencies.dart';
@@ -42,7 +42,11 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   GameScreenController? _controller;
-  BackgroundMusicController? _musicController;
+  // Only set when a [BackgroundMusicController] is injected (tests). In
+  // production music is owned by the app-lifetime [AudioManager] singleton,
+  // so there's nothing screen-local to stop/dispose for it.
+  BackgroundMusicController? _injectedMusicController;
+  bool _ownsMusicLifecycle = false;
 
   @override
   void initState() {
@@ -69,8 +73,7 @@ class _GameScreenState extends State<GameScreen> {
           (await LocalProgressDependencies.createGetBestLevelResultUseCase())
               .call,
       playGameAudio:
-          widget.playGameAudio ??
-          (await AudioDependencies.createGameAudioController()).play,
+          widget.playGameAudio ?? AudioManager.instance.playGameAudio,
     );
     if (!mounted) {
       controller.dispose();
@@ -80,17 +83,18 @@ class _GameScreenState extends State<GameScreen> {
       _controller = controller;
     });
 
-    final musicController =
-        widget.backgroundMusicController ??
-        (widget.enableBoardAnimations
-            ? await AudioDependencies.createBackgroundMusicController()
-            : null);
-    if (musicController != null) {
+    final injectedMusicController = widget.backgroundMusicController;
+    if (injectedMusicController != null) {
       if (!mounted) {
-        await musicController.stop();
+        await injectedMusicController.stop();
       } else {
-        _musicController = musicController;
-        await musicController.start();
+        _injectedMusicController = injectedMusicController;
+        await injectedMusicController.start();
+      }
+    } else if (widget.enableBoardAnimations) {
+      _ownsMusicLifecycle = true;
+      if (mounted) {
+        await AudioManager.instance.startMusic();
       }
     }
 
@@ -99,7 +103,11 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   void dispose() {
-    _musicController?.stop();
+    if (_injectedMusicController != null) {
+      _injectedMusicController!.stop();
+    } else if (_ownsMusicLifecycle) {
+      AudioManager.instance.stopMusic();
+    }
     _controller?.dispose();
     super.dispose();
   }
