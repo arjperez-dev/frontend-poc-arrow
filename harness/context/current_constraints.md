@@ -23,9 +23,10 @@ Check every item on this list before starting any phase. Update this file when c
 
 ## Levels
 
-- `assets/levels/manual_levels.json` is the **authoritative hand-editable source**. Do not run `node tool/gen_levels.js --generate` unless regeneration is explicitly intended by the task.
+- `assets/levels/manual_levels.json` is the **authoritative hand-editable source**. Do not run `node tool/gen_levels.js --generate` (levels 1–15) or `--generate-figures` (levels 16–20) unless regeneration is explicitly intended by the task.
 - `--validate-only` is always safe and reads without writing.
 - **Level 2 test contract**: name='Level 2', arrow count ≥ 10. Do not change level 2's name or arrow count below the floor without updating `test/features/game/infrastructure/manual_levels_test.dart`.
+- **20 levels total** (1–15 random rectangle boards, 16–20 figure silhouettes: heart/diamond/club/spade/crown). `AppConfig.manualLevelCount` is the single source of truth for the count — do not hardcode `15` or `20` elsewhere. See `docs/LEVEL_AUTHORING.md` §15 for the figure-level generation model (why `hasInteriorGapExit` doesn't apply to them, why solvability — not density — is the binding constraint when tuning a shape).
 
 ## Audio (Phase 15)
 
@@ -50,4 +51,4 @@ Check every item on this list before starting any phase. Update this file when c
 
 ---
 
-*Last updated: 2026-06-23 (Phase 15 — audio playback stability: AudioManager singleton, SFX pool, music volume/focus, victory.mp3 sample rate)*
+*Last updated: 2026-06-23 (Phase 16 — figure levels 16–20: heart/diamond/club/spade/crown, `--generate-figures`, 15→20 levels)*

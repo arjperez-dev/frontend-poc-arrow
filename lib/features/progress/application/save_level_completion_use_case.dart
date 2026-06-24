@@ -1,12 +1,14 @@
 import '../domain/level_best_result.dart';
 import 'best_level_result_policy.dart';
 import 'local_progress_repository.dart';
+import '../../../core/config/app_config.dart';
+
 
 class SaveLevelCompletionUseCase {
   const SaveLevelCompletionUseCase(
     this._repository, {
     this.bestResultPolicy = const BestLevelResultPolicy(),
-    this.maxManualLevel = 15,
+    this.maxManualLevel = AppConfig.manualLevelCount,
   });
 
   final LocalProgressRepository _repository;

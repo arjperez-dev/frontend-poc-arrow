@@ -10,6 +10,7 @@ import '../../progress/infrastructure/local_progress_dependencies.dart';
 import 'game_screen_controller.dart';
 import 'game_ui_keys.dart';
 import 'widgets/graph_board.dart';
+import '../../../core/config/app_config.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -248,7 +249,7 @@ class _GameReadyView extends StatelessWidget {
             score: session.score.value,
             moves: session.movesCount,
             bestScore: controller.bestResult?.score,
-            hasNextLevel: (level.number ?? 15) < 15,
+            hasNextLevel: (level.number ?? 0) < AppConfig.manualLevelCount,
             onRetry: controller.restart,
             onBackToLevels: onBackToLevels,
             onNextLevel: onNextLevel,

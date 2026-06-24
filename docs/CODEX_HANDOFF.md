@@ -766,14 +766,160 @@ for.
 - The SFX pool size (3) and music volume (0.6) are reasonable starting values,
   not tuned against a real device by ear; expect follow-up adjustment requests.
 
-## Next Recommended Phase
+## Phase 16 — Figure Levels 16–20 (2026-06-23)
 
-Recommended next phase: manual on-device validation of the Phase 15 audio fix
-(confirm no crash across many level transitions, music ducks instead of
-silencing under SFX, no crackling, victory/defeat play at normal speed, music
-survives the Next Level button) — this is the first phase in this log where
-the underlying defects are physically un-testable without a real device/
-emulator. After that: final release preparation and the long-pending manual
+### Context
+
+This branch (`feat/figure-levels`) extends the game from 15 to 20 levels.
+Levels 16–20 are **fixed shape silhouettes** (heart, diamond, club, spade,
+crown) instead of the random-rectangle boards used for 1–15, and gradually
+increase in difficulty within that new sub-tier. `AppConfig.manualLevelCount
+= 20` and its three call sites (`game_screen.dart`'s `hasNextLevel`,
+`MergeProgressUseCase`, `SaveLevelCompletionUseCase`) were already wired in
+by a prior session before this phase started; this phase supplied the actual
+level content those call sites needed, plus a leftover generic-maze draft
+"Level 16" in the working tree (not a figure, not from this tool) was
+replaced outright.
+
+### What Changed
+
+**`tool/gen_levels.js`:**
+- Added `keepLargestComponent(nodes)` and `rasterMask(W, H, predicate)` —
+  rasterize a continuous formula onto an integer grid, keep only the largest
+  4-connected component as a safety net against a thin extremity (e.g. a
+  spike tip) pinching off at low resolution.
+- Added five shape-mask functions: `heartNodeSet` (implicit heart curve),
+  `diamondNodeSet` (Manhattan-distance rhombus), `clubNodeSet` (3-circle
+  trefoil + stem), `spadeNodeSet` (anisotropically-widened heart curve +
+  stem + flared foot), `crownNodeSet` (5 individually-tapered triangular
+  spikes + jewel + rim band + flared base).
+- Added `generateFigureLevel(...)`, a sibling to the existing `generateLevel`
+  reusing `partitionNodes`/`Builder`/`flipInteriorGapArrows`'s neighbors, but:
+  - calls **both** `weave()` and `weaveH()` (an irregular blob needs
+    grid-adjacency in both axes; the random tiers only need `weave()` because
+    they're row-aligned rectangles);
+  - enforces **all four directions present** (each ≥ `max(2, 10%)` of the
+    arrow count, capped at 45% for any one direction) — stricter than the
+    random tiers' "at least one vertical, ≤60%", which is why several of
+    levels 1–15 are missing a direction entirely;
+  - **does not** call `hasInteriorGapExit`/`flipInteriorGapArrows`. That
+    check exists to catch an accidental hole in an otherwise-rectangular
+    board (the Phase 14 bug). A deliberate figure silhouette is concave by
+    design and mathematically simply connected (no enclosed holes) — every
+    "missing" cell inside its bounding box is part of the shape's own visible
+    edge. Applying the bbox-relative check rejected ~100% of valid partitions
+    in testing, so it's a false-positive generator for this shape class, not
+    a real defect check.
+- Added `FIGURE_LEVEL_DEFS` (16–20) and `buildFigureLevels()`.
+- Added CLI mode `--generate-figures`: reads the on-disk JSON, keeps only
+  `number <= 15` verbatim, regenerates 16–20, validates the full 20-level set,
+  writes only if valid (same write-only-if-valid contract as `--generate`).
+- Generalized two hardcoded-`15` spots so future expansion doesn't need a
+  code change: `--validate-only`'s count gate now checks the level numbers
+  form a contiguous `1..N` sequence (not `=== 15`); the hard-tier difficulty
+  check now asserts "every number ≥ 11 present is `hard`" instead of
+  "11–15 are hard".
+- `validateAll`'s `gapExit=` column reports `Y(figure-ok)` for levels with
+  `metadata.generationType === 'figure'` instead of failing them; `hardRects`
+  threshold is now `< hardLevels.length` (was hardcoded `< 5`) so it scales
+  with the now-10-level hard tier.
+
+**`assets/levels/manual_levels.json`:** levels 1–15 byte-identical (verified —
+`git diff` against the last commit shows pure insertions, zero deletions, for
+the 1–15 region); 16–20 replaced with the generated figure levels.
+
+**`test/features/game/infrastructure/manual_levels_test.dart`:** updated the
+handful of assertions with literal counts (`hasLength(15)` → `20`,
+`levels.last.number` → `20`, `List.generate(15,...)` → `20`, added
+`manual-020` id check). Scoped `should_have_no_interior_gap_exits` to exclude
+`generationType == 'figure'` levels, mirroring the JS-side reasoning above.
+Every other test already iterates generically over all loaded levels or uses
+open-ended `>= 11` range checks, so 16–20 are covered with zero edits.
+
+**`docs/LEVEL_AUTHORING.md`:** level count 15→20; new §15 documenting the
+figure-level generation model, the `--generate-figures` flag, and — as a
+concrete record for the next person tuning a shape — the spade/crown
+solvability lessons below.
+
+### Iteration History (what didn't work, and why)
+
+Three rounds of user feedback shaped the final shapes/densities:
+
+1. **"Arrows are too little [small], hard to play."** Initial club/spade/star
+   used `maxPathLen: 3` (2-edge arrows), giving 49/52/52 arrows respectively —
+   visually cluttered. Fix: raised `maxPathLen` to 4–5 for levels 18–20 (and
+   `FIGURE_MAX_RETRIES` 8000→20000, since longer arrows have a much lower
+   valid-partition rate). Result: fewer, longer, more readable arrows
+   (high-30s instead of low-50s).
+2. **"That spade doesn't look like one" / "the crown is not a crown."** Two
+   separate shape redesigns, same underlying lesson:
+   - A wide-ellipse spade body looked more distinctly spade-shaped in
+     isolation but was a near-total solvability dead end (0 solved in 300+
+     sampled partitions — a round, densely-packed body leaves almost no
+     resolvable lane structure for the greedy solver). Replaced with a
+     narrower, proven-solvable heart-curve body (anisotropically widened for
+     better shoulders) plus a narrow stem that flares to a small triangular
+     foot — the flared foot is what actually reads as "spade".
+   - A first crown used one shared linear-taper formula for all 5 spikes,
+     packed too close together — rendered as illegible noise rather than 5
+     points. Fixed by defining each spike's triangle explicitly with
+     consistent gaps (clearly separated points, center spike tallest, single
+     jewel on the center tip). That shape was then *still* unsolvable (0/1500
+     across maxPathLen 3–5) until the solid rim band — a large, dense,
+     near-rectangular region — was shrunk; a large near-rectangle has the
+     same low-solvability problem as the wide ellipse, just less obviously.
+   - **General lesson recorded in §15:** when tuning a figure mask, check the
+     actual greedy-solved rate over a few hundred/thousand sampled partitions
+     before fixing a density band — coverage-success and connectivity can
+     both be 100% while solvability is silently ~0%, and that only shows up
+     by exhausting the retry budget (or, faster, by testing the rate
+     directly rather than waiting on the real generator's retry loop).
+3. **"Delete the star, replace it with something in a similar context but not
+   that one."** Level 20 changed from a 5-pointed star to a crown (same
+   "card/game symbol" family as heart/diamond/club/spade, user's pick from a
+   short list of options).
+
+A visual experiment to address node-dot prominence (shrinking/dimming the
+board's node dots so arrows read more clearly) was tried and reverted at the
+user's request after testing; a different, better fix for the same underlying
+concern (covered nodes rendered near-invisible, only lighting up once the
+arrow covering them escapes) landed independently in
+`graph_board_painter.dart` during this session.
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (same count as Phase 15 — no tests added or
+  removed, only literal-count assertions updated).
+- `node tool/gen_levels.js --validate-only`: ALL VALID: true for all 20
+  levels; `comp=1`, `free=-`, `shared=-`, `solvable=true` throughout;
+  `gapExit=Y(figure-ok)` for 16–20 (expected — see above), `-` for 1–15.
+
+### New Tests
+
+- None (existing tests generalized/updated; see manual_levels_test.dart notes
+  above).
+
+### Limitations
+
+- Manual emulator/device validation of levels 16–20 (does the figure
+  silhouette read correctly on a real screen size, is pan/zoom comfortable
+  for these larger boards) has not been performed — this phase's iteration
+  was guided by ASCII-raster inspection and the validator's structural
+  checks, not an on-device screenshot.
+- Crown's arrow count (28) ended up below club/spade/diamond (37 each)
+  because every denser variant that was tried had a near-zero solvable rate;
+  this breaks strict "more arrows every level" progression within the figure
+  sub-tier, though the hard tier's overall average is still far above medium.
+- The five figure-mask functions hardcode their grid constants (no shared
+  "scale" parameter) — intentional per `docs/LEVEL_AUTHORING.md` §15
+  guidance to tune each shape's actual solved rate individually rather than
+  deriving sizes from a formula.
+
+### Next Recommended Phase
+
+Manual on-device validation of levels 16–20 (figure readability, pan/zoom
+comfort, that all-four-direction arrows feel natural to play), alongside the
+still-pending Phase 15 audio on-device validation and the long-pending manual
 backend/emulator smoke test (auth, sync, leaderboard against the Docker
-backend) for Phases 9–14.1. Optionally, random graph-based level generation
-afterward.
+backend) for Phases 9–14.1.
