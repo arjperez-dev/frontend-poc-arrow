@@ -2,13 +2,16 @@ import '../domain/level_best_result.dart';
 import '../domain/local_progress.dart';
 import '../domain/remote_progress_entry.dart';
 import 'best_level_result_policy.dart';
+import '../../../core/config/app_config.dart';
 
 class MergeProgressUseCase {
   const MergeProgressUseCase({
     this.bestResultPolicy = const BestLevelResultPolicy(),
+    this.maxManualLevel = AppConfig.manualLevelCount,
   });
 
   final BestLevelResultPolicy bestResultPolicy;
+  final int maxManualLevel;
 
   LocalProgress call({
     required LocalProgress local,
@@ -30,7 +33,7 @@ class MergeProgressUseCase {
       if (remote.completed) {
         completed.add(levelNumber);
         final unlockedCandidate = levelNumber + 1;
-        if (unlockedCandidate <= 15 && unlockedCandidate > lastUnlockedLevel) {
+        if (unlockedCandidate <= maxManualLevel && unlockedCandidate > lastUnlockedLevel) {
           lastUnlockedLevel = unlockedCandidate;
         }
       }

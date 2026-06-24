@@ -5,9 +5,14 @@ import '../../domain/board_graph.dart';
 import '../../domain/graph_node.dart';
 
 class GraphBoardLayout {
-  const GraphBoardLayout._({required this.positionsByNodeId});
+  const GraphBoardLayout._({required this.positionsByNodeId, required this.step});
 
   final Map<String, Offset> positionsByNodeId;
+
+  /// Pixel distance between adjacent grid coordinates. Used to scale arrow
+  /// stroke width and arrowhead size so dense boards don't draw arrowheads
+  /// that reach past their own cell and over a neighbouring arrow.
+  final double step;
 
   factory GraphBoardLayout.fromGraph({
     required BoardGraph graph,
@@ -15,7 +20,7 @@ class GraphBoardLayout {
     double padding = 32,
   }) {
     if (graph.nodes.isEmpty) {
-      return const GraphBoardLayout._(positionsByNodeId: {});
+      return const GraphBoardLayout._(positionsByNodeId: {}, step: 1);
     }
 
     final minX = graph.nodes.map((node) => node.coordinate.x).reduce(math.min);
@@ -43,6 +48,7 @@ class GraphBoardLayout {
         for (final node in graph.nodes)
           node.id: _positionFor(node, minX, minY, step, origin),
       },
+      step: step,
     );
   }
 

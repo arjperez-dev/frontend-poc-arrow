@@ -10,6 +10,13 @@ class AppTheme {
   static const softText = Color(0xFFE8F1FF);
   static const mutedText = Color(0xFF9BA9C7);
 
+  /// Neon palette used for rendering arrows on the game board.
+  static const neonBlue = Color(0xFF1FC8FF);
+  static const neonGreen = Color(0xFF39FF8E);
+  static const neonYellow = Color(0xFFF6FF3D);
+  static const neonPink = Color(0xFFFF36C2);
+  static const neonPurple = Color(0xFFB347FF);
+
   static ThemeData dark() {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: neonMint,

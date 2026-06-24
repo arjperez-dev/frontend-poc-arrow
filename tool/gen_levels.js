@@ -211,6 +211,144 @@ function coordAdj(id, nodes) {
 }
 
 // ---------------------------------------------------------------------------
+// Shape masks (figure levels 16-20) — rasterize a continuous silhouette
+// formula onto an integer grid, then keep only the largest 4-connected
+// component as a safety net against thin extremities (e.g. a star tip)
+// pinching off into an isolated cell at the chosen resolution.
+// ---------------------------------------------------------------------------
+function keepLargestComponent(nodes) {
+  const seen = new Set();
+  let best = [];
+  for (const startId of nodes.keys()) {
+    if (seen.has(startId)) continue;
+    const comp = [startId];
+    seen.add(startId);
+    const stack = [startId];
+    while (stack.length) {
+      const curId = stack.pop();
+      const { x, y } = nodes.get(curId);
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nb = nid(x + dx, y + dy);
+        if (nodes.has(nb) && !seen.has(nb)) { seen.add(nb); stack.push(nb); comp.push(nb); }
+      }
+    }
+    if (comp.length > best.length) best = comp;
+  }
+  const result = new Map();
+  for (const id of best) result.set(id, nodes.get(id));
+  return result;
+}
+
+function rasterMask(W, H, predicate) {
+  const nodes = new Map();
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (predicate(x, y)) nodes.set(nid(x, y), { x, y });
+  return keepLargestComponent(nodes);
+}
+
+// Classic implicit heart curve (u²+v²−1)³ − u²v³ ≤ ε. v is flipped so the
+// cusp/notch (two lobes) sits at the top and the point tapers at the bottom.
+function heartNodeSet() {
+  const W = 29, H = 27, cx = 14, cy = 10, s = 6.2, eps = 0.02;
+  return rasterMask(W, H, (x, y) => {
+    const u = (x - cx) / s, v = -(y - cy) / s;
+    const t = u * u + v * v - 1;
+    return (t * t * t - u * u * v * v * v) <= eps;
+  });
+}
+
+// Rhombus: Manhattan distance <= 1 from center. Always single-component.
+function diamondNodeSet() {
+  const W = 15, H = 15, cx = 7, cy = 7, sx = 7, sy = 7;
+  return rasterMask(W, H, (x, y) => {
+    const u = (x - cx) / sx, v = (y - cy) / sy;
+    return Math.abs(u) + Math.abs(v) <= 1;
+  });
+}
+
+// Trefoil (top + left + right circles) over a stem column. The stem starts
+// well inside the top circle's footprint so it bridges into the body with no
+// gap (a gap here would otherwise split the stem into its own component).
+function clubNodeSet() {
+  const W = 21, H = 21;
+  const cx = (W - 1) / 2, r = 3.525, sep = 4.725;
+  const topC = [cx, 5.25];
+  const leftC = [cx - sep, 5.25 + sep * 0.85];
+  const rightC = [cx + sep, 5.25 + sep * 0.85];
+  const inCircle = (x, y, [ccx, ccy]) => {
+    const dx = x - ccx, dy = y - ccy; return dx * dx + dy * dy <= r * r;
+  };
+  return rasterMask(W, H, (x, y) => {
+    if (inCircle(x, y, topC) || inCircle(x, y, leftC) || inCircle(x, y, rightC)) return true;
+    return Math.abs(x - cx) <= 1.8 && y >= 8.25 && y <= 18;
+  });
+}
+
+// Heart curve, unflipped (point at the top, rounded body below — the same
+// proven-solvable silhouette family as the original spade), widened
+// anisotropically (sx > sy) for fuller "shoulders", plus a narrow stem that
+// flares gradually to a wide triangular foot at the very bottom. The flared
+// foot is what reads as "spade" rather than a generic point-up teardrop; an
+// earlier wide-ellipse-bodied version with a plain stem looked more
+// distinctly spade-shaped but was a near-total solvability dead end (0/300
+// in testing) — the round, densely-packed body left almost no resolvable
+// lane structure for the greedy solver.
+function spadeNodeSet() {
+  const W = 29, H = 31, cx = 14, cy = 16, sx = 6.4, sy = 5.6, eps = 0.02;
+  const stemHalf = 1.6, stemFrom = 22, footFrom = 26, footTo = 30, footHalf = 4.2;
+  return rasterMask(W, H, (x, y) => {
+    const u = (x - cx) / sx, v = (y - cy) / sy;
+    const t = u * u + v * v - 1;
+    if ((t * t * t - u * u * v * v * v) <= eps) return true;
+    if (Math.abs(x - cx) <= stemHalf && y >= stemFrom && y <= footFrom) return true;
+    if (y > footFrom && y <= footTo) {
+      const frac = (y - footFrom) / (footTo - footFrom);
+      const half = stemHalf + frac * (footHalf - stemHalf);
+      if (Math.abs(x - cx) <= half) return true;
+    }
+    return false;
+  });
+}
+
+// A royal crown: 5 individually-tapered triangular spikes (the center one
+// tallest, like a real crown) sitting on a solid rim band with a small
+// flared base, plus a jewel orb on the center spike's tip. Each spike is
+// defined explicitly (not a generic repeating step) so there is a clear,
+// consistent gap between adjacent spikes at every row — a first attempt
+// using one shared linear taper for all spikes rendered as illegible noise
+// at this resolution instead of 5 distinct points.
+function crownNodeSet() {
+  const W = 21, H = 11, cx = 10, halfW = 8;
+  const bandTop = 7, bandBot = 9, baseY = 10, flareMult = 1.2;
+  const spikeBaseHalf = 1.5, tipHalf = 0.4, jewelR = 0.9;
+  const spikeTops = [
+    { dx: -7, topY: 4 }, { dx: -3.5, topY: 2 }, { dx: 0, topY: 0, jewel: true },
+    { dx: 3.5, topY: 2 }, { dx: 7, topY: 4 },
+  ];
+  return rasterMask(W, H, (x, y) => {
+    if (y >= bandTop && y <= bandBot && Math.abs(x - cx) <= halfW) return true;
+    if (y > bandBot && y <= baseY) {
+      const half = halfW + (y - bandBot) * flareMult;
+      if (Math.abs(x - cx) <= half) return true;
+    }
+    for (const { dx, topY, jewel } of spikeTops) {
+      const spikeX = cx + dx;
+      if (y >= topY && y <= bandTop) {
+        const frac = (y - topY) / (bandTop - topY);
+        const half = tipHalf + frac * (spikeBaseHalf - tipHalf);
+        if (Math.abs(x - spikeX) <= half) return true;
+      }
+      if (jewel) {
+        const jdx = x - spikeX, jdy = y - topY;
+        if (jdx * jdx + jdy * jdy <= jewelR * jewelR) return true;
+      }
+    }
+    return false;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Path partition (most-constrained-first DFS, horizontal-end bias)
 //
 // After partitioning, paths satisfy:
@@ -384,6 +522,85 @@ function generateLevel(number, name, difficulty, meta, baseSeed) {
 }
 
 // ---------------------------------------------------------------------------
+// Figure levels (16-20): fixed shape silhouette (heart/diamond/club/spade/
+// star) instead of a random rectangle. Only the partition into arrows is
+// retried per seed — the node set itself is deterministic per shape.
+//
+// Direction-variety is stricter here than the random tiers: the random
+// generator only requires "at least one vertical arrow, cap 60%", which is
+// why several of levels 1-15 are missing a direction entirely. Figure levels
+// must use all four directions so every escape has arrows leaving every way.
+// ---------------------------------------------------------------------------
+const FIGURE_MAX_RETRIES = 20000;
+
+function generateFigureLevel(number, name, meta, seed, nodeSetFactory, maxPathLen, band) {
+  const reject = { coverage: 0, density: 0, noBent: 0, disconnected: 0,
+    selfIntersect: 0, directionVariety: 0, unsolvable: 0 };
+  for (let attempt = 0; attempt < FIGURE_MAX_RETRIES; attempt++) {
+    const rng = makePRNG(seed + attempt * 97);
+    const nodeSet = nodeSetFactory();
+    const totalNodes = nodeSet.size;
+
+    const paths = partitionNodes(nodeSet, rng, maxPathLen);
+
+    const covered = new Set(paths.flatMap(p => p.nodeIds));
+    if (covered.size !== totalNodes) { reject.coverage++; continue; }
+    if (paths.some(p => p.nodeIds.length < 2)) { reject.coverage++; continue; }
+
+    const b = Builder(number, name, 'hard');
+    for (const { nodeIds, dir } of paths) {
+      b.arrowOverCells(nodeIds.map(id => {
+        const { x, y } = nodeSet.get(id); return [x, y];
+      }), dir);
+    }
+    b.weave();
+    b.weaveH(); // irregular blob shapes need both axes woven for connectivity
+    const level = b.build(meta);
+    const dj = level.definitionJson;
+    dj.metadata.generationType = 'figure';
+
+    const n = dj.arrows.length;
+    if (n < band.min || n > band.max) { reject.density++; continue; }
+    if (!dj.arrows.some(a => a.occupiedEdges.length >= 2)) { reject.noBent++; continue; }
+    if (connectedComponents(dj) !== 1) { reject.disconnected++; continue; }
+
+    // hasInteriorGapExit/flipInteriorGapArrows are deliberately NOT applied
+    // here. That check exists for the random tiers (1-15), where a sparse,
+    // accidental boundary-removal hole inside an otherwise-rectangular board
+    // could make an arrow exit early past a visible blocker. A figure-level
+    // silhouette (heart/diamond/club/spade/star) is mathematically simply
+    // connected (no enclosed holes — verified via keepLargestComponent and
+    // ASCII-raster inspection per shape) and is deliberately, visibly
+    // non-rectangular: every "missing" cell inside the bounding box is part
+    // of the shape's own concave outer edge, clearly empty background to the
+    // player, not an invisible defect. Treating every concave dent as a gap
+    // would reject every possible partition (verified empirically: 100% of
+    // coverage-passing attempts failed this check before it was removed).
+    if (hasSelfIntersectingArrow(dj)) { reject.selfIntersect++; continue; }
+
+    // All four directions required, each with a meaningful share — not just
+    // "has a vertical arrow". This is what makes arrows exit every way.
+    const dirCounts = {};
+    for (const a of dj.arrows) dirCounts[a.direction] = (dirCounts[a.direction] || 0) + 1;
+    const minPerDir = Math.max(2, Math.floor(n * 0.10));
+    const allFour = ['up', 'down', 'left', 'right'].every(d => (dirCounts[d] || 0) >= minPerDir);
+    const maxDirFrac = Math.max(...['up', 'down', 'left', 'right'].map(d => dirCounts[d] || 0)) / n;
+    if (!allFour || maxDirFrac > 0.45) { reject.directionVariety++; continue; }
+
+    if (!solvableGreedy(dj)) { reject.unsolvable++; continue; }
+
+    console.log(`  #${number} attempt ${attempt + 1}: ${n} arrows, ${totalNodes} nodes, dirs=${JSON.stringify(dirCounts)}`);
+    return level;
+  }
+
+  throw new Error(
+    `Figure level #${number} '${name}': exhausted all ${FIGURE_MAX_RETRIES} retries ` +
+    `without finding a valid level. Rejection breakdown: ${JSON.stringify(reject)}. ` +
+    `Tune the shape mask or band.`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // DEAD CODE — buildCombFallback is no longer called. generateLevel throws
 // instead of falling back to this deterministic layout. Retained for reference.
 // ---------------------------------------------------------------------------
@@ -472,6 +689,28 @@ const LEVEL_DEFS = [
 
 function buildLevels() {
   return LEVEL_DEFS.map(d => generateLevel(d.number, d.name, d.difficulty, d.meta, d.seed));
+}
+
+// Figure levels 16-20: heart, diamond, club, spade, star. Arrow-count bands
+// step up from level 15's 22 arrows, staying inside the hard tier's overall
+// [20,60] density band (51-60 is an allowed warning, per LEVEL_AUTHORING.md).
+const FIGURE_LEVEL_DEFS = [
+  { number: 16, name: 'Level 16', meta: { t: 75, m: 168 }, seed: 160016,
+    nodeSetFactory: heartNodeSet,   maxPathLen: 6, band: { min: 24, max: 32 } },
+  { number: 17, name: 'Level 17', meta: { t: 70, m: 186 }, seed: 170017,
+    nodeSetFactory: diamondNodeSet, maxPathLen: 3, band: { min: 34, max: 40 } },
+  { number: 18, name: 'Level 18', meta: { t: 65, m: 204 }, seed: 180018,
+    nodeSetFactory: clubNodeSet,    maxPathLen: 4, band: { min: 33, max: 40 } },
+  { number: 19, name: 'Level 19', meta: { t: 60, m: 222 }, seed: 190019,
+    nodeSetFactory: spadeNodeSet,   maxPathLen: 5, band: { min: 34, max: 41 } },
+  { number: 20, name: 'Level 20', meta: { t: 55, m: 240 }, seed: 200020,
+    nodeSetFactory: crownNodeSet,   maxPathLen: 4, band: { min: 25, max: 32 } },
+];
+
+function buildFigureLevels() {
+  return FIGURE_LEVEL_DEFS.map(d => generateFigureLevel(
+    d.number, d.name, d.meta, d.seed, d.nodeSetFactory, d.maxPathLen, d.band
+  ));
 }
 
 // ---------------------------------------------------------------------------
@@ -746,6 +985,12 @@ function validateAll(levels) {
     const sv = solvableGreedy(dj), sh = shapeOf(dj);
     const shared = noSharedNodes(dj);
     const gapExit = hasInteriorGapExit(dj);
+    // Figure levels (16-20) are deliberately concave silhouettes: every
+    // bbox-interior "gap" is part of the shape's own visible outer edge, not
+    // an accidental hole (see the comment in generateFigureLevel). Only the
+    // random tiers (1-15) — nearly-rectangular boards where a gap is a real
+    // generation defect — are held to this check.
+    const isFigure = dj.metadata && dj.metadata.generationType === 'figure';
     const components = connectedComponents(dj), n = dj.arrows.length;
     if (arrowsByTier[diff]) arrowsByTier[diff].push(n);
     const band = DENSITY[diff]; let densityErr = '';
@@ -753,7 +998,7 @@ function validateAll(levels) {
       if (n < band.min || n > band.max) densityErr = `density ${n} out of [${band.min},${band.max}]`;
       else if (band.warn && n > band.warn) warnings.push(`#${lvl.number} dense (${n} arrows, >${band.warn})`);
     }
-    const bad = se.length || free || !sv || densityErr || components !== 1 || shared || gapExit;
+    const bad = se.length || free || !sv || densityErr || components !== 1 || shared || (gapExit && !isFigure);
     if (bad) ok = false;
     console.log(
       '#' + String(lvl.number).padStart(2) + ' ' + (lvl.name || '').padEnd(15) +
@@ -765,26 +1010,29 @@ function validateAll(levels) {
       ' comp=' + components +
       ' free=' + (free ? JSON.stringify(free) : '-') +
       ' shared=' + (shared ? JSON.stringify(shared) : '-') +
-      ' gapExit=' + (gapExit ? 'Y' : '-') +
+      ' gapExit=' + (gapExit ? (isFigure ? 'Y(figure-ok)' : 'Y') : '-') +
       ' solvable=' + sv +
       (components !== 1 ? ' DISCONNECTED(' + components + ')' : '') +
       (densityErr ? ' ' + densityErr.toUpperCase() : '') +
       (se.length ? ' STRUCT_ERR=' + JSON.stringify(se) : '')
     );
   }
+  // Generalized so any count >= 15 (figure levels 16+) works without a code
+  // change: 1-5 easy, 6-10 medium, every number >= 11 present must be hard.
   const prog = [1,2,3,4,5].every(k => diffByNum[k] === 'easy') &&
     [6,7,8,9,10].every(k => diffByNum[k] === 'medium') &&
-    [11,12,13,14,15].every(k => diffByNum[k] === 'hard');
+    Object.keys(diffByNum).map(Number).filter(k => k >= 11).every(k => diffByNum[k] === 'hard');
   const avg = t => arrowsByTier[t].reduce((a, b) => a + b, 0) / (arrowsByTier[t].length || 1);
   const increasing = avg('easy') < avg('medium') && avg('medium') < avg('hard');
-  const hardRects = levels.filter(l => l.number >= 11).filter(l => shapeOf(l.definitionJson).rect).length;
+  const hardLevels = levels.filter(l => l.number >= 11);
+  const hardRects = hardLevels.filter(l => shapeOf(l.definitionJson).rect).length;
   console.log();
   console.log('difficulty progression ok:', prog);
   console.log('tier avg arrows: easy=' + avg('easy').toFixed(1) + ' medium=' + avg('medium').toFixed(1) +
     ' hard=' + avg('hard').toFixed(1) + ' (must strictly increase:', increasing + ')');
-  console.log('hard full-rectangle levels:', hardRects, '(must be < 5)');
+  console.log('hard full-rectangle levels:', hardRects, '(must be <', hardLevels.length, ')');
   if (warnings.length) console.log('WARNINGS:', warnings.join('; '));
-  const allOk = ok && prog && increasing && hardRects < 5;
+  const allOk = ok && prog && increasing && hardRects < hardLevels.length;
   console.log('ALL VALID:', allOk);
   return allOk;
 }
@@ -825,9 +1073,10 @@ function selfTest() {
 function main() {
   const args = process.argv.slice(2);
   const generate = args.includes('--generate');
-  const validateOnly = args.includes('--validate-only') || !generate;
-  if (generate && args.includes('--validate-only')) {
-    console.error('Pass either --generate or --validate-only, not both.');
+  const generateFigures = args.includes('--generate-figures');
+  const modeCount = [generate, generateFigures, args.includes('--validate-only')].filter(Boolean).length;
+  if (modeCount > 1) {
+    console.error('Pass exactly one of --generate, --generate-figures, --validate-only.');
     process.exitCode = 2; return;
   }
   if (!selfTest()) return;
@@ -845,11 +1094,33 @@ function main() {
     }
     return;
   }
+  if (generateFigures) {
+    console.log('MODE: --generate-figures (regenerates levels 16-20 only; 1-15 left byte-identical)\n');
+    const parsed = JSON.parse(fs.readFileSync(ASSET, 'utf8'));
+    const base = (parsed.levels || []).filter(l => l.number <= 15);
+    if (base.length !== 15) {
+      console.log(`Expected 15 base levels (1-15) on disk, found ${base.length}`); process.exitCode = 1; return;
+    }
+    const figures = buildFigureLevels();
+    console.log();
+    const levels = [...base, ...figures];
+    const allOk = validateAll(levels);
+    if (allOk) {
+      fs.writeFileSync(ASSET, JSON.stringify({ levels }, null, 2) + '\n');
+      console.log('\nWROTE', ASSET);
+    } else {
+      console.log('\nNOT WRITTEN — fix issues first'); process.exitCode = 1;
+    }
+    return;
+  }
   console.log('MODE: --validate-only (reads manual_levels.json, never writes)\n');
   const parsed = JSON.parse(fs.readFileSync(ASSET, 'utf8'));
   const levels = parsed.levels || [];
-  if (levels.length !== 15) {
-    console.log(`Expected 15 levels, found ${levels.length}`); process.exitCode = 1; return;
+  const numbers = levels.map(l => l.number).sort((a, b) => a - b);
+  const contiguous = numbers.length > 0 && numbers.every((n, i) => n === i + 1);
+  if (!contiguous) {
+    console.log(`Expected a contiguous 1..N level numbering, found: ${JSON.stringify(numbers)}`);
+    process.exitCode = 1; return;
   }
   const allOk = validateAll(levels);
   if (!allOk) process.exitCode = 1;

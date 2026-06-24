@@ -658,6 +658,503 @@ The arrow was a valid simple path (5 edges, 6 distinct nodes — not a graph cyc
 - `node tool/gen_levels.js --validate-only`: ALL VALID: true; self-intersection column clean for all 15 levels.
 - Coordinate-scan script confirms 0 self-intersecting arrows across all 15 levels.
 
-## Next Recommended Phase
+## Phase 15 — Audio Playback Stability Fix (2026-06-22/23)
 
-Recommended next phase: final release preparation and a manual backend/emulator smoke test (auth, sync, leaderboard against the Docker backend), plus the pending manual emulator validation for all phases (9–14.1). Optionally, random graph-based level generation afterward.
+### Context
+
+User-reported, real-device bugs (not covered by the Phase 14 Task A audit, which
+checked Clean Architecture compliance only — not runtime audio behavior):
+intermittent crashes, music and SFX silencing each other, crackling/distorted
+playback, and victory/defeat SFX playing back sped up. **This corrects the
+Phase 14 Task A conclusion** ("fully compliant, no changes needed") — the code
+was architecturally clean but had live runtime defects the audit didn't check
+for.
+
+### Root Causes Found
+
+1. **Crash (resource leak):** `AudioDependencies` constructed a brand-new
+   `AudioPlayer` pair every time `GameScreen` mounted (every level/retry/next
+   level); nothing ever called the existing `dispose()` methods on
+   `AudioPlayersAudioPort`/`AudioPlayersMusicPort`. Native players accumulated
+   across a session.
+2. **Music/SFX silencing each other:** the SFX port set an explicit Android
+   `AudioContext` (`gainTransientMayDuck`) on every `play()` call; the music
+   port never set any `AudioContext` at all, leaving it on undocumented
+   platform defaults that don't reliably negotiate ducking with the SFX
+   stream's transient focus request.
+3. **Crackling/distortion:** `AudioPlayersMusicPort._musicVolume` was `1.1` —
+   above the `0.0–1.0` range the underlying `audioplayers` plugin passes
+   straight into Android's native `MediaPlayer.setVolume()` unclamped.
+4. **Victory/defeat sped up:** all four SFX events shared one `AudioPlayer`
+   instance with `stop()` immediately followed by `play()` on every call, no
+   debounce — concurrent/rapid events raced each other. Byte-level MP3 header
+   inspection also found `victory.mp3` encoded at 48000 Hz while
+   `move.mp3`/`blocked.mp3`/`defeat.mp3` were at 44100 Hz, compounding the race
+   when the shared player switched between mismatched-rate assets.
+5. **(Found after the first fix round) Next Level button stops music:**
+   `_openNextLevel()` uses `Navigator.pushReplacementNamed`, which disposes the
+   old `GameScreen` while mounting a new one. Once music ownership moved to a
+   singleton (fix for #1), the old screen's `stopMusic()` and the new screen's
+   `startMusic()` raced on the same singleton — whichever ran last won, and
+   the old screen's stop tended to land after the new screen's start.
+
+### What Changed
+
+- **`lib/features/audio/infrastructure/audio_manager.dart` (new):** app-lifetime
+  `AudioManager` singleton. Created once; `GameAudioController` and
+  `BackgroundMusicController` are built lazily and cached, never recreated per
+  screen. `startMusic()`/`stopMusic()` are reference-counted (`_musicClaims`)
+  so overlapping claims from an old screen disposing and a new screen starting
+  (the `pushReplacementNamed` race) don't kill music a still-active screen
+  wants playing — only the first claim starts playback and only the last
+  release stops it.
+- **`lib/features/audio/infrastructure/audio_dependencies.dart` (deleted):** the
+  per-screen factory that caused the leak; superseded by `AudioManager`.
+- **`lib/features/audio/infrastructure/audio_players_audio_port.dart`:** SFX
+  now uses a small pool of 3 `AudioPlayer`s (round-robin) instead of one
+  shared instance, so concurrent/rapid SFX events no longer race a single
+  player's `stop()`/`play()`. `AudioContext`/volume are set once per pooled
+  player at construction instead of on every `play()` call. `usageType`
+  corrected from `notification` to `game`.
+- **`lib/features/audio/infrastructure/audio_players_music_port.dart`:**
+  `_musicVolume` clamped `1.1` → `1.0`, then tuned to `0.6` per user request
+  (music should sit quieter than SFX). Added an explicit `AudioContext`
+  (`contentType: music`, `usageType: media`, `audioFocus: gain`) so the OS
+  properly ducks (not kills) this stream against the SFX port's
+  `gainTransientMayDuck` request.
+- **`lib/features/game/presentation/game_screen.dart`:** wired to
+  `AudioManager.instance` instead of `AudioDependencies`. Test injection seams
+  (`widget.playGameAudio`, `widget.backgroundMusicController`) preserved
+  unchanged — no test files needed modification.
+- **`assets/audio/victory.mp3`:** re-encoded 48000 Hz → 44100 Hz (`ffmpeg
+  -ar 44100 -codec:a libmp3lame -q:a 2`) to match the other three SFX assets;
+  duration unchanged (4.203s). `ffmpeg` was installed via `scoop` (user-level,
+  no admin) after `choco install ffmpeg` failed on a lock-file permission error
+  — `choco` requires an elevated shell this environment doesn't have.
+
+### Files Touched
+
+- `lib/features/audio/infrastructure/audio_manager.dart` (new)
+- `lib/features/audio/infrastructure/audio_dependencies.dart` (deleted)
+- `lib/features/audio/infrastructure/audio_players_audio_port.dart`
+- `lib/features/audio/infrastructure/audio_players_music_port.dart`
+- `lib/features/game/presentation/game_screen.dart`
+- `assets/audio/victory.mp3` (binary re-encode)
+- `lib/features/audio/application/{background_music_controller,game_audio_event,music_port}.dart` (formatting only, via `dart format`)
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (no new tests; same count as Phase 14.1 — see Limitations).
+- `node tool/gen_levels.js --validate-only`: not applicable (no level files touched); re-ran anyway — ALL VALID: true, unaffected.
+
+### New Tests
+
+- None. See Limitations.
+
+### Limitations
+
+- **No automated regression test was added.** All five root causes are
+  real-device/native-plugin behaviors (focus negotiation, native volume
+  clamping, player resource lifecycle, sample-rate handling) that the
+  existing fake-based unit tests (`_FakeAudioPort`, `_FakeSettingsRepository`)
+  cannot exercise. Manual on-device verification is required to confirm the
+  crash, ducking, distortion, and playback-rate fixes actually hold under real
+  Android/iOS audio focus behavior.
+- Manual emulator/device validation for this phase, and the still-pending
+  manual validation for Phases 9–14.1, has not been performed.
+- The SFX pool size (3) and music volume (0.6) are reasonable starting values,
+  not tuned against a real device by ear; expect follow-up adjustment requests.
+
+## Phase 16 — Figure Levels 16–20 (2026-06-23)
+
+### Context
+
+This branch (`feat/figure-levels`) extends the game from 15 to 20 levels.
+Levels 16–20 are **fixed shape silhouettes** (heart, diamond, club, spade,
+crown) instead of the random-rectangle boards used for 1–15, and gradually
+increase in difficulty within that new sub-tier. `AppConfig.manualLevelCount
+= 20` and its three call sites (`game_screen.dart`'s `hasNextLevel`,
+`MergeProgressUseCase`, `SaveLevelCompletionUseCase`) were already wired in
+by a prior session before this phase started; this phase supplied the actual
+level content those call sites needed, plus a leftover generic-maze draft
+"Level 16" in the working tree (not a figure, not from this tool) was
+replaced outright.
+
+### What Changed
+
+**`tool/gen_levels.js`:**
+- Added `keepLargestComponent(nodes)` and `rasterMask(W, H, predicate)` —
+  rasterize a continuous formula onto an integer grid, keep only the largest
+  4-connected component as a safety net against a thin extremity (e.g. a
+  spike tip) pinching off at low resolution.
+- Added five shape-mask functions: `heartNodeSet` (implicit heart curve),
+  `diamondNodeSet` (Manhattan-distance rhombus), `clubNodeSet` (3-circle
+  trefoil + stem), `spadeNodeSet` (anisotropically-widened heart curve +
+  stem + flared foot), `crownNodeSet` (5 individually-tapered triangular
+  spikes + jewel + rim band + flared base).
+- Added `generateFigureLevel(...)`, a sibling to the existing `generateLevel`
+  reusing `partitionNodes`/`Builder`/`flipInteriorGapArrows`'s neighbors, but:
+  - calls **both** `weave()` and `weaveH()` (an irregular blob needs
+    grid-adjacency in both axes; the random tiers only need `weave()` because
+    they're row-aligned rectangles);
+  - enforces **all four directions present** (each ≥ `max(2, 10%)` of the
+    arrow count, capped at 45% for any one direction) — stricter than the
+    random tiers' "at least one vertical, ≤60%", which is why several of
+    levels 1–15 are missing a direction entirely;
+  - **does not** call `hasInteriorGapExit`/`flipInteriorGapArrows`. That
+    check exists to catch an accidental hole in an otherwise-rectangular
+    board (the Phase 14 bug). A deliberate figure silhouette is concave by
+    design and mathematically simply connected (no enclosed holes) — every
+    "missing" cell inside its bounding box is part of the shape's own visible
+    edge. Applying the bbox-relative check rejected ~100% of valid partitions
+    in testing, so it's a false-positive generator for this shape class, not
+    a real defect check.
+- Added `FIGURE_LEVEL_DEFS` (16–20) and `buildFigureLevels()`.
+- Added CLI mode `--generate-figures`: reads the on-disk JSON, keeps only
+  `number <= 15` verbatim, regenerates 16–20, validates the full 20-level set,
+  writes only if valid (same write-only-if-valid contract as `--generate`).
+- Generalized two hardcoded-`15` spots so future expansion doesn't need a
+  code change: `--validate-only`'s count gate now checks the level numbers
+  form a contiguous `1..N` sequence (not `=== 15`); the hard-tier difficulty
+  check now asserts "every number ≥ 11 present is `hard`" instead of
+  "11–15 are hard".
+- `validateAll`'s `gapExit=` column reports `Y(figure-ok)` for levels with
+  `metadata.generationType === 'figure'` instead of failing them; `hardRects`
+  threshold is now `< hardLevels.length` (was hardcoded `< 5`) so it scales
+  with the now-10-level hard tier.
+
+**`assets/levels/manual_levels.json`:** levels 1–15 byte-identical (verified —
+`git diff` against the last commit shows pure insertions, zero deletions, for
+the 1–15 region); 16–20 replaced with the generated figure levels.
+
+**`test/features/game/infrastructure/manual_levels_test.dart`:** updated the
+handful of assertions with literal counts (`hasLength(15)` → `20`,
+`levels.last.number` → `20`, `List.generate(15,...)` → `20`, added
+`manual-020` id check). Scoped `should_have_no_interior_gap_exits` to exclude
+`generationType == 'figure'` levels, mirroring the JS-side reasoning above.
+Every other test already iterates generically over all loaded levels or uses
+open-ended `>= 11` range checks, so 16–20 are covered with zero edits.
+
+**`docs/LEVEL_AUTHORING.md`:** level count 15→20; new §15 documenting the
+figure-level generation model, the `--generate-figures` flag, and — as a
+concrete record for the next person tuning a shape — the spade/crown
+solvability lessons below.
+
+### Iteration History (what didn't work, and why)
+
+Three rounds of user feedback shaped the final shapes/densities:
+
+1. **"Arrows are too little [small], hard to play."** Initial club/spade/star
+   used `maxPathLen: 3` (2-edge arrows), giving 49/52/52 arrows respectively —
+   visually cluttered. Fix: raised `maxPathLen` to 4–5 for levels 18–20 (and
+   `FIGURE_MAX_RETRIES` 8000→20000, since longer arrows have a much lower
+   valid-partition rate). Result: fewer, longer, more readable arrows
+   (high-30s instead of low-50s).
+2. **"That spade doesn't look like one" / "the crown is not a crown."** Two
+   separate shape redesigns, same underlying lesson:
+   - A wide-ellipse spade body looked more distinctly spade-shaped in
+     isolation but was a near-total solvability dead end (0 solved in 300+
+     sampled partitions — a round, densely-packed body leaves almost no
+     resolvable lane structure for the greedy solver). Replaced with a
+     narrower, proven-solvable heart-curve body (anisotropically widened for
+     better shoulders) plus a narrow stem that flares to a small triangular
+     foot — the flared foot is what actually reads as "spade".
+   - A first crown used one shared linear-taper formula for all 5 spikes,
+     packed too close together — rendered as illegible noise rather than 5
+     points. Fixed by defining each spike's triangle explicitly with
+     consistent gaps (clearly separated points, center spike tallest, single
+     jewel on the center tip). That shape was then *still* unsolvable (0/1500
+     across maxPathLen 3–5) until the solid rim band — a large, dense,
+     near-rectangular region — was shrunk; a large near-rectangle has the
+     same low-solvability problem as the wide ellipse, just less obviously.
+   - **General lesson recorded in §15:** when tuning a figure mask, check the
+     actual greedy-solved rate over a few hundred/thousand sampled partitions
+     before fixing a density band — coverage-success and connectivity can
+     both be 100% while solvability is silently ~0%, and that only shows up
+     by exhausting the retry budget (or, faster, by testing the rate
+     directly rather than waiting on the real generator's retry loop).
+3. **"Delete the star, replace it with something in a similar context but not
+   that one."** Level 20 changed from a 5-pointed star to a crown (same
+   "card/game symbol" family as heart/diamond/club/spade, user's pick from a
+   short list of options).
+
+A visual experiment to address node-dot prominence (shrinking/dimming the
+board's node dots so arrows read more clearly) was tried and reverted at the
+user's request after testing; a different, better fix for the same underlying
+concern (covered nodes rendered near-invisible, only lighting up once the
+arrow covering them escapes) landed independently in
+`graph_board_painter.dart` during this session.
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (same count as Phase 15 — no tests added or
+  removed, only literal-count assertions updated).
+- `node tool/gen_levels.js --validate-only`: ALL VALID: true for all 20
+  levels; `comp=1`, `free=-`, `shared=-`, `solvable=true` throughout;
+  `gapExit=Y(figure-ok)` for 16–20 (expected — see above), `-` for 1–15.
+
+### New Tests
+
+- None (existing tests generalized/updated; see manual_levels_test.dart notes
+  above).
+
+### Limitations
+
+- Manual emulator/device validation of levels 16–20 (does the figure
+  silhouette read correctly on a real screen size, is pan/zoom comfortable
+  for these larger boards) has not been performed — this phase's iteration
+  was guided by ASCII-raster inspection and the validator's structural
+  checks, not an on-device screenshot.
+- Crown's arrow count (28) ended up below club/spade/diamond (37 each)
+  because every denser variant that was tried had a near-zero solvable rate;
+  this breaks strict "more arrows every level" progression within the figure
+  sub-tier, though the hard tier's overall average is still far above medium.
+- The five figure-mask functions hardcode their grid constants (no shared
+  "scale" parameter) — intentional per `docs/LEVEL_AUTHORING.md` §15
+  guidance to tune each shape's actual solved rate individually rather than
+  deriving sizes from a formula.
+
+### Next Recommended Phase
+
+Manual on-device validation of levels 16–20 (figure readability, pan/zoom
+comfort, that all-four-direction arrows feel natural to play), alongside the
+still-pending Phase 15 audio on-device validation and the long-pending manual
+backend/emulator smoke test (auth, sync, leaderboard against the Docker
+backend) for Phases 9–14.1.
+
+## Phase 15.1 — Pause/Resume Music on App Background (2026-06-24)
+
+### Context
+
+Follow-up to Phase 15. User reported that backgrounding the app during a
+level (pressing home / switching to another app on the phone) left the
+background music playing — nothing in `AudioManager` observed app
+visibility, so the music kept running on the OS audio session even though
+the app itself was no longer in the foreground.
+
+### What Changed
+
+- **`lib/features/audio/infrastructure/audio_manager.dart`:** `AudioManager`
+  now `extends WidgetsBindingObserver` and registers itself
+  (`WidgetsBinding.instance.addObserver(this)`) once, in the singleton's
+  private constructor. Overrides `didChangeAppLifecycleState`:
+  - `AppLifecycleState.paused` (app backgrounded) → stops the music, via a
+    new `_musicPausedForBackground` flag guard (idempotent; only acts once
+    per background transition, and only if a screen currently holds a music
+    claim).
+  - `AppLifecycleState.resumed` (app foregrounded again) → restarts the
+    music automatically, but only if `_musicPausedForBackground` was set
+    *and* `_musicClaims > 0` — so it doesn't start music out of nowhere if
+    the user backgrounded from a screen that wasn't playing music (e.g. the
+    level-selection screen).
+  - `_musicPausedForBackground` is intentionally separate from the existing
+    `_musicClaims` reference count (Phase 15's Next Level fix): claims track
+    *which screen wants music*; the new flag tracks *whether the OS, not a
+    screen, silenced it*. Keeping them independent means the still-active
+    `GameScreen` doesn't need to do anything on resume — `AudioManager`
+    restores playback on its own.
+
+### Files Touched
+
+- `lib/features/audio/infrastructure/audio_manager.dart`
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (no new tests — see Limitations).
+- `node tool/gen_levels.js --validate-only`: not applicable, no level files touched.
+
+### New Tests
+
+- None. `AppLifecycleState` transitions are not simulated by this project's
+  widget tests; see Limitations.
+
+### Limitations
+
+- No automated test covers this — same class of gap as the rest of Phase 15
+  (native/OS-level behavior that fake-based unit tests can't exercise).
+  Manual on-device check needed: start a level, background the app, confirm
+  the music stops; foreground it again, confirm the music resumes on its
+  own without navigating away from the screen.
+- Only `paused`/`resumed` are handled. `inactive` (brief OS transitions, e.g.
+  notification shade, incoming call) and `detached`/`hidden` are
+  intentionally not treated as "background" — reacting to `inactive` would
+  likely cause audible stutter on transient state changes that aren't a
+  real backgrounding.
+
+### Next Recommended Phase
+
+Same as above (Phase 16's recommendation) plus: fold this on-device check
+into the same manual validation pass as the rest of Phase 15 (crash-free
+across many level transitions, ducking, no crackling, normal-speed SFX,
+music survives Next Level, and now also survives background/foreground).
+
+## Phase 17 — Game Board Rendering Polish (2026-06-23/24)
+
+### Context
+
+User-reported visual/usability issues on the game board, distinct from the
+gameplay-rules work in Phases 9–14.1: nodes always rendered as solid opaque
+white circles regardless of game state, the arrow color palette was muted
+pastel, and on dense boards (hard tier, the new figure levels) arrowhead
+tips visually drew over neighbouring arrows and taps near a cluster of
+arrows could register the wrong one. Branch `feat/frontend-rendering`,
+merged via two PRs (#4, #5) onto `develop`.
+
+### What Changed
+
+- **`lib/core/theme/app_theme.dart`:** added a 5-color neon palette —
+  `neonBlue`, `neonGreen`, `neonYellow`, `neonPink`, `neonPurple`.
+- **`lib/features/game/presentation/widgets/graph_board_painter.dart`:**
+  - `_colorForArrow` switched from the old 4-color pastel palette
+    (`neonMint`, two hardcoded hex pinks/blues, `pastelAmber`) to the new
+    5-color neon palette.
+  - Node rendering now depends on coverage: a node still occupied by an
+    active arrow (`coveredNodeIds`, built from `session.activeArrows`'
+    `orderedNodeIds`) is drawn almost invisible (alpha 0.08, radius 3). A
+    node not covered by any active arrow — i.e. freed once the arrow over
+    it escapes — gets a lighter/translucent halo+dot (alpha 0.16 / 0.5)
+    instead of the previous fully-opaque white circle. Net effect: at level
+    start, every node is covered (per the no-free-nodes rule), so only
+    arrows are visible; nodes light up progressively as arrows escape.
+  - Stroke width and arrowhead length/width are now capped relative to the
+    board's pixel cell size (`layout.step`) instead of fixed constants:
+    `_arrowStrokeWidth` and the length/width calc inside `_drawArrowHead`
+    use `math.min(originalConstant, cellSize * factor)`, floored so they
+    never disappear. On boards spacious enough (cell ≳ 43px — true for most
+    of levels 1–15) this is a no-op (same fixed 12px stroke / 18px head as
+    before); on dense boards it shrinks proportionally so the arrowhead tip
+    never reaches far enough to draw over a neighbouring arrow.
+- **`lib/features/game/presentation/widgets/graph_board_layout.dart`:**
+  added a `step` field (pixel distance between adjacent grid coordinates),
+  computed in `fromGraph` and exposed for the painter and hit-tester to
+  scale against.
+- **`lib/features/game/presentation/widgets/graph_board_hit_tester.dart`:**
+  `hitSlop` (tap tolerance) is no longer a fixed 28px radius — it now scales
+  with `layout.step`, capped at 45% of cell spacing (so the tolerance radius
+  around one node never reaches halfway to its neighbour) and floored at
+  12px. Unaffected for any board with cell size ≥ ~62px (cap stays at the
+  old 28px); on dense boards this prevents a single tap from matching
+  multiple adjacent arrows depending on iteration order.
+- **`lib/features/game/presentation/widgets/graph_board.dart`:** the
+  board's `AspectRatio` now matches the level's own node-bounding-box
+  aspect ratio (`_boardAspectRatio`, clamped to `[0.6, 1.6]`) instead of
+  always forcing a square. Square-ish levels (most of 1–15) are unaffected;
+  a level that's notably taller or wider than the other axis gets real
+  extra pixels on its longer dimension instead of that space going unused.
+
+### Files Touched
+
+- `lib/core/theme/app_theme.dart`
+- `lib/features/game/presentation/widgets/graph_board_painter.dart`
+- `lib/features/game/presentation/widgets/graph_board_layout.dart`
+- `lib/features/game/presentation/widgets/graph_board_hit_tester.dart`
+- `lib/features/game/presentation/widgets/graph_board.dart`
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (no new tests — see Limitations).
+- `node tool/gen_levels.js --validate-only`: not applicable, no level files
+  touched.
+
+### New Tests
+
+- None. Presentation-only visual/interaction tuning; no test file asserts
+  exact pixel colors, node alpha, or hit-slop radius values.
+
+### Limitations
+
+- No automated regression test for the visual change (node alpha, neon
+  colors) or the hit-slop/aspect-ratio tuning — these are exactly the kind
+  of presentation-layer behavior this project's fake-based widget tests
+  don't assert pixel-level detail on. Manual on-device/emulator check still
+  recommended: confirm nodes are nearly invisible at level start and light
+  up as arrows escape, confirm dense levels (hard tier, figure levels
+  16–20) no longer show arrowhead tips overlapping neighbouring arrows, and
+  confirm taps register the intended arrow on a dense board.
+
+## Phase 18 — Pinch-to-Zoom Reliability Fix (2026-06-24)
+
+### Context
+
+Follow-up to Phase 17. User reported that pinch-to-zoom on the board is
+hard to "grab" — the gesture frequently fails to start cleanly, requiring
+multiple attempts.
+
+### Root Cause
+
+`GraphBoard`'s `InteractiveViewer` is nested inside the page-level
+`ListView` in `game_screen.dart`'s `_GameReadyView` (the whole screen —
+HUD, board, buttons — scrolls as one list). This is a known Flutter gotcha:
+when a pinch gesture starts, the first finger's initial contact can be
+claimed by the ancestor `ListView`'s vertical-drag recognizer (via Flutter's
+gesture arena) before the second finger lands and `InteractiveViewer`'s own
+`ScaleGestureRecognizer` can claim both pointers. Once the ancestor has
+"won" one of the two pointers, the scale recognizer never gets a clean
+two-finger gesture, so the pinch doesn't register reliably — the user has
+to land both fingers almost perfectly simultaneously to avoid the race.
+
+### What Changed
+
+- **`lib/features/game/presentation/widgets/graph_board.dart`:**
+  - Added `onInteractionActiveChanged: ValueChanged<bool>?` to `GraphBoard`.
+  - `_GraphBoardState` now wraps the board's `Stack` (the `InteractiveViewer`
+    + reset-view button) in a `Listener` that tracks `_activePointers` via
+    `onPointerDown`/`onPointerUp`/`onPointerCancel`. `_onPointerCountChanged`
+    calls `widget.onInteractionActiveChanged` only on the 0→1 and 1→0
+    transitions (not on every pointer event), reporting `true` while at
+    least one finger touches the board.
+- **`lib/features/game/presentation/game_screen.dart`:**
+  - `_GameScreenState` gained `bool _lockPageScroll`, flipped by a callback
+    passed as `GraphBoard.onInteractionActiveChanged` (via `_GameReadyView`).
+  - `_GameReadyView`'s `ListView` now sets
+    `physics: lockPageScroll ? NeverScrollableScrollPhysics() : ClampingScrollPhysics()`.
+  - Net effect: as soon as any finger touches the board, the page-level
+    `ListView` stops being scrollable, so it can never claim a pointer that
+    started on the board — `InteractiveViewer`'s scale recognizer gets
+    uncontested control of the gesture. The lock releases the instant all
+    fingers lift, so normal page scrolling (e.g. on level-complete, to reach
+    the buttons) is unaffected.
+
+### Files Touched
+
+- `lib/features/game/presentation/widgets/graph_board.dart`
+- `lib/features/game/presentation/game_screen.dart`
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (no new tests — see Limitations).
+- `node tool/gen_levels.js --validate-only`: not applicable, no level files
+  touched.
+
+### New Tests
+
+- None. Multi-touch gesture-arena races between a `Listener`/`InteractiveViewer`
+  and an ancestor `Scrollable` are not reproducible through this project's
+  widget-test harness (synthetic `tester.tap`/`tester.drag` calls inject a
+  single synthetic pointer sequence, not the real two-finger race condition
+  being fixed). Same category of gap as Phase 15/15.1's native-behavior
+  fixes.
+
+### Limitations
+
+- Manual on-device/emulator verification still needed: confirm a pinch
+  gesture started anywhere on the board reliably scales on the first
+  attempt, and confirm the page still scrolls normally via touches that
+  start outside the board (HUD, buttons, whitespace).
+- This commit was pending at write time — see `harness/context/phase_registry.md`
+  for status once merged.
+
+### Next Recommended Phase
+
+Manual on-device validation pass covering Phases 15/15.1/17/18 together
+(audio crash/ducking/crackling/playback-rate/background-pause, board node
+visibility and neon colors, dense-level tap accuracy, and pinch-to-zoom
+reliability) — this is now the largest block of "implemented but only
+verified by automated tests" work in the project. After that: the
+long-pending manual backend/emulator smoke test (auth, sync, leaderboard
+against the Docker backend) for Phases 9–14.1.

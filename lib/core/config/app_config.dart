@@ -5,4 +5,6 @@ class AppConfig {
     'API_BASE_URL',
     defaultValue: 'http://10.0.2.2:3000',
   );
+  static const int manualLevelCount = 20;
 }
+

@@ -39,12 +39,12 @@ void main() {
     );
   });
 
-  test('should_load_15_manual_levels_from_assets', () async {
+  test('should_load_20_manual_levels_from_assets', () async {
     final levels = await GetLocalLevelsUseCase(repository)();
 
-    expect(levels, hasLength(15));
+    expect(levels, hasLength(20));
     expect(levels.first.number, 1);
-    expect(levels.last.number, 15);
+    expect(levels.last.number, 20);
   });
 
   test('should_validate_all_manual_levels', () async {
@@ -57,7 +57,7 @@ void main() {
 
     final levels = dtos.map(mapper.toDomain).map(validator.validate).toList();
 
-    expect(levels, hasLength(15));
+    expect(levels, hasLength(20));
     expect(levels.every((level) => level.boardGraph.nodes.isNotEmpty), isTrue);
     expect(levels.every((level) => level.boardGraph.edges.isNotEmpty), isTrue);
   });
@@ -85,17 +85,17 @@ void main() {
     final levels = await GetLocalLevelsUseCase(repository)();
     final numbers = levels.map((level) => level.number).toSet();
 
-    expect(numbers, hasLength(15));
-    expect(numbers, containsAll(List<int>.generate(15, (index) => index + 1)));
+    expect(numbers, hasLength(20));
+    expect(numbers, containsAll(List<int>.generate(20, (index) => index + 1)));
   });
 
   test('should_have_unique_level_ids', () async {
     final levels = await GetLocalLevelsUseCase(repository)();
     final ids = levels.map((level) => level.id).toSet();
 
-    expect(ids, hasLength(15));
+    expect(ids, hasLength(20));
     expect(ids, contains('manual-001'));
-    expect(ids, contains('manual-015'));
+    expect(ids, contains('manual-020'));
   });
 
   test(
@@ -347,7 +347,14 @@ void main() {
     // bounding box but has no node. Such gaps (from hard-level boundary removal)
     // create invisible escape holes: the player sees another arrow visually ahead
     // but the resolver exits at the gap before reaching it.
-    final levels = await GetLocalLevelsUseCase(repository)();
+    //
+    // Figure levels (16-20, generationType 'figure') are deliberately concave
+    // silhouettes (heart/diamond/club/spade/star) — every bbox-interior "gap"
+    // is part of the shape's own visible outer edge, not an accidental hole,
+    // so this bbox-relative check does not apply to them (see the matching
+    // comment in tool/gen_levels.js's generateFigureLevel).
+    final levels = (await GetLocalLevelsUseCase(repository)())
+        .where((level) => level.metadata['generationType'] != 'figure');
     for (final level in levels) {
       final graph = level.boardGraph;
       final nodes = graph.nodes;

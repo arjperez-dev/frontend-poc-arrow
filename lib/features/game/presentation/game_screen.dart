@@ -3,13 +3,14 @@ import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart
 import '../../audio/application/background_music_controller.dart';
 import '../../../core/routing/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../audio/infrastructure/audio_dependencies.dart';
+import '../../audio/infrastructure/audio_manager.dart';
 import '../domain/game_session.dart';
 import '../infrastructure/local_level_dependencies.dart';
 import '../../progress/infrastructure/local_progress_dependencies.dart';
 import 'game_screen_controller.dart';
 import 'game_ui_keys.dart';
 import 'widgets/graph_board.dart';
+import '../../../core/config/app_config.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -42,7 +43,17 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   GameScreenController? _controller;
-  BackgroundMusicController? _musicController;
+  // Only set when a [BackgroundMusicController] is injected (tests). In
+  // production music is owned by the app-lifetime [AudioManager] singleton,
+  // so there's nothing screen-local to stop/dispose for it.
+  BackgroundMusicController? _injectedMusicController;
+  bool _ownsMusicLifecycle = false;
+
+  // While a finger is touching the board, the page must not scroll — an
+  // ancestor ListView competing for the same pointers is what makes
+  // pinch-to-zoom on the board feel unresponsive (see GraphBoard's
+  // onInteractionActiveChanged doc comment).
+  bool _lockPageScroll = false;
 
   @override
   void initState() {
@@ -69,8 +80,7 @@ class _GameScreenState extends State<GameScreen> {
           (await LocalProgressDependencies.createGetBestLevelResultUseCase())
               .call,
       playGameAudio:
-          widget.playGameAudio ??
-          (await AudioDependencies.createGameAudioController()).play,
+          widget.playGameAudio ?? AudioManager.instance.playGameAudio,
     );
     if (!mounted) {
       controller.dispose();
@@ -80,17 +90,18 @@ class _GameScreenState extends State<GameScreen> {
       _controller = controller;
     });
 
-    final musicController =
-        widget.backgroundMusicController ??
-        (widget.enableBoardAnimations
-            ? await AudioDependencies.createBackgroundMusicController()
-            : null);
-    if (musicController != null) {
+    final injectedMusicController = widget.backgroundMusicController;
+    if (injectedMusicController != null) {
       if (!mounted) {
-        await musicController.stop();
+        await injectedMusicController.stop();
       } else {
-        _musicController = musicController;
-        await musicController.start();
+        _injectedMusicController = injectedMusicController;
+        await injectedMusicController.start();
+      }
+    } else if (widget.enableBoardAnimations) {
+      _ownsMusicLifecycle = true;
+      if (mounted) {
+        await AudioManager.instance.startMusic();
       }
     }
 
@@ -99,7 +110,11 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   void dispose() {
-    _musicController?.stop();
+    if (_injectedMusicController != null) {
+      _injectedMusicController!.stop();
+    } else if (_ownsMusicLifecycle) {
+      AudioManager.instance.stopMusic();
+    }
     _controller?.dispose();
     super.dispose();
   }
@@ -143,6 +158,12 @@ class _GameScreenState extends State<GameScreen> {
                 onBackToLevels: _backToLevels,
                 onNextLevel: _openNextLevel,
                 onOpenLeaderboard: _openLeaderboard,
+                lockPageScroll: _lockPageScroll,
+                onBoardInteractionActiveChanged: (active) {
+                  if (active != _lockPageScroll) {
+                    setState(() => _lockPageScroll = active);
+                  }
+                },
               ),
             },
           ),
@@ -184,6 +205,8 @@ class _GameReadyView extends StatelessWidget {
     required this.onBackToLevels,
     required this.onNextLevel,
     required this.onOpenLeaderboard,
+    required this.lockPageScroll,
+    required this.onBoardInteractionActiveChanged,
   });
 
   final GameScreenController controller;
@@ -191,6 +214,11 @@ class _GameReadyView extends StatelessWidget {
   final VoidCallback onBackToLevels;
   final VoidCallback onNextLevel;
   final VoidCallback onOpenLeaderboard;
+
+  /// When true, an in-progress touch on the board means the page itself must
+  /// not scroll (see GameScreen's `_lockPageScroll` doc comment).
+  final bool lockPageScroll;
+  final ValueChanged<bool> onBoardInteractionActiveChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -202,6 +230,9 @@ class _GameReadyView extends StatelessWidget {
       children: [
         ListView(
           padding: const EdgeInsets.all(20),
+          physics: lockPageScroll
+              ? const NeverScrollableScrollPhysics()
+              : const ClampingScrollPhysics(),
           children: [
             _GameHud(session: session),
             const SizedBox(height: 18),
@@ -211,6 +242,7 @@ class _GameReadyView extends StatelessWidget {
               flashingArrowId: controller.flashingArrowId,
               animate: animateBoard,
               onArrowActivated: controller.activateArrow,
+              onInteractionActiveChanged: onBoardInteractionActiveChanged,
             ),
             const SizedBox(height: 18),
             if (!controller.isVictory && !controller.isGameOver)
@@ -240,7 +272,7 @@ class _GameReadyView extends StatelessWidget {
             score: session.score.value,
             moves: session.movesCount,
             bestScore: controller.bestResult?.score,
-            hasNextLevel: (level.number ?? 15) < 15,
+            hasNextLevel: (level.number ?? 0) < AppConfig.manualLevelCount,
             onRetry: controller.restart,
             onBackToLevels: onBackToLevels,
             onNextLevel: onNextLevel,

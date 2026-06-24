@@ -5,8 +5,8 @@ class BackgroundMusicController {
   const BackgroundMusicController({
     required MusicPort musicPort,
     required GetPlayerSettingsUseCase getPlayerSettings,
-  })  : _musicPort = musicPort,
-        _getPlayerSettings = getPlayerSettings;
+  }) : _musicPort = musicPort,
+       _getPlayerSettings = getPlayerSettings;
 
   final MusicPort _musicPort;
   final GetPlayerSettingsUseCase _getPlayerSettings;

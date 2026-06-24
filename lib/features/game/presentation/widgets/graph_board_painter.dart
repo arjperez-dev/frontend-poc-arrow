@@ -82,20 +82,36 @@ class GraphBoardPainter extends CustomPainter {
       _drawExitingArrow(canvas, layout, exiting, size);
     }
 
-    final nodeHaloPaint = Paint()
-      ..color = AppTheme.background.withValues(alpha: 0.78)
+    // A node is "covered" while some active arrow still occupies it. Covered
+    // nodes stay almost invisible so the board reads as pure arrows at the
+    // start of a level (every node is covered then, by the no-free-nodes
+    // rule); a node only lights up once the arrow covering it escapes.
+    final coveredNodeIds = <String>{};
+    for (final arrow in session.activeArrows) {
+      coveredNodeIds.addAll(arrow.orderedNodeIds);
+    }
+
+    final coveredNodePaint = Paint()
+      ..color = AppTheme.softText.withValues(alpha: 0.08)
       ..style = PaintingStyle.fill;
-    final nodePaint = Paint()
-      ..color = AppTheme.softText
+    final freeNodeHaloPaint = Paint()
+      ..color = AppTheme.softText.withValues(alpha: 0.16)
+      ..style = PaintingStyle.fill;
+    final freeNodePaint = Paint()
+      ..color = AppTheme.softText.withValues(alpha: 0.5)
       ..style = PaintingStyle.fill;
     for (final node in graph.nodes) {
       final position = layout.positionOf(node.id);
       if (position == null) {
         continue;
       }
-      canvas
-        ..drawCircle(position, 7, nodeHaloPaint)
-        ..drawCircle(position, 4, nodePaint);
+      if (coveredNodeIds.contains(node.id)) {
+        canvas.drawCircle(position, 3, coveredNodePaint);
+      } else {
+        canvas
+          ..drawCircle(position, 7, freeNodeHaloPaint)
+          ..drawCircle(position, 4, freeNodePaint);
+      }
     }
   }
 
@@ -187,7 +203,7 @@ class GraphBoardPainter extends CustomPainter {
 
     final pathPaint = Paint()
       ..color = color.withValues(alpha: opacity)
-      ..strokeWidth = 12
+      ..strokeWidth = _arrowStrokeWidth(layout.step)
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
@@ -207,7 +223,13 @@ class GraphBoardPainter extends CustomPainter {
 
     final displacedHead = displaced[n - 1];
     if (displacedHead != null) {
-      _drawArrowHead(canvas, displacedHead, arrow.direction, color.withValues(alpha: opacity));
+      _drawArrowHead(
+        canvas,
+        displacedHead,
+        arrow.direction,
+        color.withValues(alpha: opacity),
+        layout.step,
+      );
     }
   }
 
@@ -231,7 +253,10 @@ class GraphBoardPainter extends CustomPainter {
   ) {
     final pathPaint = Paint()
       ..color = color.withValues(alpha: opacity)
-      ..strokeWidth = arrow.id == lastActivatedArrowId ? 14 : 12
+      ..strokeWidth = _arrowStrokeWidth(
+        layout.step,
+        emphasized: arrow.id == lastActivatedArrowId,
+      )
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
@@ -258,8 +283,16 @@ class GraphBoardPainter extends CustomPainter {
         headPosition + translation,
         arrow.direction,
         color.withValues(alpha: opacity),
+        layout.step,
       );
     }
+  }
+
+  /// Stroke width, capped relative to cell size so dense boards (small cell
+  /// spacing) draw thinner lines that don't bleed into a neighbouring cell.
+  double _arrowStrokeWidth(double cellSize, {bool emphasized = false}) {
+    final cap = emphasized ? 14.0 : 12.0;
+    return math.max(3.0, math.min(cap, cellSize * (emphasized ? 0.32 : 0.28)));
   }
 
   void _drawArrowHead(
@@ -267,6 +300,7 @@ class GraphBoardPainter extends CustomPainter {
     Offset position,
     Direction direction,
     Color color,
+    double cellSize,
   ) {
     // The arrowhead orientation depends ONLY on the arrow's head direction, not
     // on its body shape. `position` is the head (endNodeId) and the tip extends
@@ -279,8 +313,10 @@ class GraphBoardPainter extends CustomPainter {
       Direction.down => math.pi / 2,
       Direction.left => math.pi,
     };
-    const length = 18.0;
-    const width = 11.0;
+    // Capped relative to cell size: on dense boards the tip must not reach
+    // far enough to draw over the next cell, where another arrow may sit.
+    final length = math.max(5.0, math.min(18.0, cellSize * 0.42));
+    final width = math.max(3.5, math.min(11.0, cellSize * 0.26));
     final tip = position + Offset(math.cos(angle), math.sin(angle)) * length;
     final left =
         position +
@@ -314,10 +350,11 @@ class GraphBoardPainter extends CustomPainter {
 
   Color _colorForArrow(String id) {
     const colors = [
-      AppTheme.neonMint,
-      Color(0xFFFF8FAB),
-      Color(0xFF91C7FF),
-      AppTheme.pastelAmber,
+      AppTheme.neonBlue,
+      AppTheme.neonGreen,
+      AppTheme.neonYellow,
+      AppTheme.neonPink,
+      AppTheme.neonPurple,
     ];
     return colors[id.hashCode.abs() % colors.length];
   }

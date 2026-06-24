@@ -44,8 +44,9 @@ there is no matrix/grid/tile model. Levels are deterministic and hand-authored.
 }
 ```
 
-- Exactly **15 levels**, `number` 1–15.
-- `difficulty`: `easy` (1–5), `medium` (6–10), `hard` (11–15).
+- Exactly **20 levels**, `number` 1–20.
+- `difficulty`: `easy` (1–5), `medium` (6–10), `hard` (11–20, see §15 for the
+  16–20 figure-level sub-tier).
 - `definitionJson` holds the graph: `nodes`, `edges`, `arrows`, `blockedEdges`,
   `metadata`.
 
@@ -216,7 +217,10 @@ exit — empties the board. The validator uses exactly this greedy check, so:
 |------|--------|--------|-------|--------------|
 | Easy | 1–5 | **10–15** (soft ramp L1→L5) | up to ~6×6 | mostly queues, light blocking, varied shapes |
 | Medium | 6–10 | **15–30** | up to ~8×8 | more blocking, more required ordering, more L/U shapes |
-| Hard | 11–15 | **20–50** (51–60 allowed as a warning) | large, irregular | heavy blocking, complex shapes, may need zoom/pan |
+| Hard | 11–20 | **20–50** (51–60 allowed as a warning) | large, irregular | heavy blocking, complex shapes, may need zoom/pan |
+
+11–15 are random irregular-rectangle boards; 16–20 are fixed figure
+silhouettes (heart/diamond/club/spade/crown) — see §15.
 
 Cross-tier rule: **average arrows must strictly increase** easy < medium < hard.
 Hard levels must **not all be full rectangles**. Do not inflate arrow counts at
@@ -258,11 +262,15 @@ Common failures:
 denser baseline:
 
 ```bash
-node tool/gen_levels.js --generate   # rebuilds and WRITES manual_levels.json
+node tool/gen_levels.js --generate          # rebuilds levels 1-15, WRITES manual_levels.json
+node tool/gen_levels.js --generate-figures  # rebuilds levels 16-20 only, WRITES manual_levels.json
 ```
 
-Use this only when you intend to replace the hand-authored JSON. Day-to-day
-authoring is hand-editing the JSON + `--validate-only`.
+Use either only when you intend to replace the corresponding hand-authored
+JSON. `--generate-figures` reads the 15 levels already on disk and carries
+them through byte-for-byte (it never touches 1–15); it only regenerates and
+replaces 16–20. Day-to-day authoring is hand-editing the JSON +
+`--validate-only`.
 
 ## 14. blockedEdges
 
@@ -270,3 +278,76 @@ authoring is hand-editing the JSON + `--validate-only`.
 schema compatibility and is **empty** in all current levels — the intended
 blocker is other active arrows, not static zones. Leave it empty unless you have
 a strong, specific reason.
+
+## 15. Figure levels (16–20)
+
+Levels 16–20 are **fixed shape silhouettes** instead of random rectangles:
+heart (16), diamond (17), club (18), spade (19), crown (20). Each shape is a
+hand-tuned continuous formula (an implicit curve, a union of circles, or a
+point-in-polygon test) rasterized onto an integer grid in
+`tool/gen_levels.js` (`heartNodeSet`, `diamondNodeSet`, `clubNodeSet`,
+`spadeNodeSet`, `crownNodeSet`). Only the *partition into arrows* is randomized
+per seed — the silhouette itself is fixed.
+
+### Generation differences from the random tiers (1–15)
+
+- **Both `weave()` and `weaveH()`** are called (not just `weave()`), because an
+  irregular blob silhouette needs grid-adjacency in both axes for the
+  connected-traversal-graph requirement (§8) — a row-aligned rectangle does
+  not.
+- **All four directions required.** The random tiers only require "at least
+  one vertical arrow, ≤60% in any single direction" — which is why several of
+  levels 1–15 are missing a direction entirely. Figure levels require all of
+  up/down/left/right present, each with at least `max(2, 10% of arrow count)`
+  arrows, capped at 45% for any one direction.
+- **`hasInteriorGapExit`/`flipInteriorGapArrows` do not apply.** That check
+  exists to catch an accidental hole in an otherwise-rectangular board (the
+  bug fixed in Phase 14). A figure silhouette is *deliberately* non-rectangular
+  and mathematically simply connected (no enclosed holes) — every "missing"
+  cell inside its bounding box is part of the shape's own visible concave
+  edge, not an accidental gap. Applying the bbox-relative check here rejects
+  almost every valid partition (verified empirically). `validateAll`'s
+  `gapExit=` column reports `Y(figure-ok)` for these levels instead of
+  treating it as a failure; the matching Dart test
+  (`should_have_no_interior_gap_exits`) excludes levels with
+  `metadata.generationType == 'figure'` for the same reason.
+- **Solvability is the tightest constraint, not density.** A shape with a
+  large, dense, nearly-rectangular or nearly-circular region (e.g. a fat
+  ellipse body, or a tall solid rim band) can have a near-zero greedy-solvable
+  rate — sometimes 0 in several thousand sampled partitions — even though
+  density and connectivity are fine. When tuning a shape, check the actual
+  solved rate (not just coverage) before fixing a density band, and prefer a
+  smaller/thinner silhouette over a denser one if solvability is rare.
+  `FIGURE_MAX_RETRIES` (20000) is generous specifically because the
+  solvable-partition rate for some shapes is under 0.1%.
+- **`metadata.generationType` is `'figure'`**, not `'manual'`, so these levels
+  are distinguishable from the random tiers (used by the gapExit exemption
+  above; nothing else depends on it).
+
+### Adding or changing a figure level
+
+1. Write a `*NodeSet()` function returning a `Map<id, {x, y}>` (see the
+   existing five for the pattern). Use `rasterMask(W, H, predicate)` and wrap
+   the result in `keepLargestComponent()` as a safety net.
+2. Sanity-check the silhouette by printing its ASCII raster before wiring it
+   in — ad hoc, not part of the script. A shape that looks right at a glance
+   usually still needs proportion tuning (see the spade/crown history below).
+3. Add the entry to `FIGURE_LEVEL_DEFS` with a `maxPathLen` and density
+   `band`. Run `node tool/gen_levels.js --generate-figures` and read the
+   per-level `attempt N:` line it prints — if it throws after exhausting
+   `FIGURE_MAX_RETRIES`, the thrown error includes a rejection-reason
+   breakdown (coverage / density / disconnected / selfIntersect /
+   directionVariety / unsolvable counts) to tell you which constraint is the
+   bottleneck.
+4. Re-run `flutter test` — `manual_levels_test.dart` covers all 20 levels
+   generically except the few assertions with literal counts.
+
+History worth knowing: an early spade (a wide ellipse body) looked more
+distinctly spade-shaped in isolation but was a near-total solvability dead
+end (0 solved in 300+ sampled partitions) — replaced with a narrower,
+proven-solvable body plus a flared stem/foot, which is what actually reads as
+"spade". An early crown used one shared linear taper formula for all 5
+spikes and rendered as illegible noise; the fix was defining each spike's
+triangle explicitly with consistent gaps, then shrinking the whole shape
+(a large solid rim band, like a dense near-rectangle, had a near-zero
+solvable rate) until the solved rate became reliable (~1% per attempt).
