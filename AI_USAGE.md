@@ -169,3 +169,17 @@ This file documents AI-assisted work for the Flutter frontend repository.
 - Limitations found: No automated regression tests were added — all five root causes (native audio-focus negotiation, native volume clamping, player resource lifecycle, sample-rate handling, navigation-driven lifecycle races) are real-device/native-plugin behaviors that this project's fake-based unit tests (`_FakeAudioPort`, `_FakeSettingsRepository`) cannot exercise. Manual on-device validation is required and still pending, as it is for Phases 9–14.1.
 - Approximate percentage of AI-assisted code: Pending.
 - Critical reflection: This phase is a useful counter-example to "audit passed, no changes needed" conclusions in this log — Clean Architecture compliance describes where code lives, not whether it behaves correctly on a real device. Future audits of adapter code (audio, storage, network) should include at least a manual device smoke test before declaring "no action needed," not just a static review of layering.
+
+## Phase 15.1 Pause Music on App Background Entry
+
+- Date: 2026-06-24
+- AI tool/model: Claude (Anthropic) coding agent (Sonnet 4.6).
+- Role of the tool: Follow-up bug fix to Phase 15.
+- Task or problem addressed: User reported that backgrounding the app during a level (home button, switching to another app) left the background music playing — `AudioManager` had no awareness of app foreground/background state.
+- Prompt or faithful paraphrase: "make the music to stop playing when one exits the app on the phone, because when I leave a game session to go to another app on the phone, the music keeps going."
+- Result obtained: Made `AudioManager` extend `WidgetsBindingObserver`, registering itself once in its private constructor, and override `didChangeAppLifecycleState` to stop music on `AppLifecycleState.paused` and restart it on `AppLifecycleState.resumed`. Added a `_musicPausedForBackground` flag kept deliberately separate from the existing `_musicClaims` reference count from Phase 15 (claims = which screen wants music; this flag = whether the OS silenced it), so the active `GameScreen` doesn't need to do anything on resume. Confirmed `WidgetsBindingObserver` is declared as a `mixin class` in this Flutter SDK (so `extends` compiles) by checking the SDK source directly rather than assuming.
+- Modifications made by the team: Pending team review on a real device.
+- Lessons learned: This bug was structurally identical to the Next Level race fixed earlier in Phase 15 — a singleton plus a concurrent external lifecycle event. Recognizing the shared shape let the same tool (a guard flag/reference count, independent of the screen-ownership counter) get reused directly instead of designing something new.
+- Limitations found: No automated test covers `AppLifecycleState` transitions in this project's widget test setup; manual on-device validation (background during a level, confirm stop; foreground again, confirm auto-resume) is required and still pending, same as the rest of Phase 15.
+- Approximate percentage of AI-assisted code: Pending.
+- Critical reflection: A second, independent app-visibility/concurrency defect surfacing in the same audio subsystem within one phase reinforces the Phase 15 lesson: native/OS-integration code (audio focus, app lifecycle) needs real-device testing, not just static review — these are exactly the kinds of behaviors a Clean Architecture compliance check cannot catch.

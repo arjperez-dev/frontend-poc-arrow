@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+
 import '../../settings/infrastructure/settings_dependencies.dart';
 import '../application/background_music_controller.dart';
 import '../application/game_audio_controller.dart';
@@ -12,8 +14,10 @@ import 'audio_players_music_port.dart';
 /// [BackgroundMusicController] (and their underlying native AudioPlayers) on
 /// every [GameScreen] mount, with nothing disposing the old ones, was what
 /// leaked native players and eventually crashed the app.
-class AudioManager {
-  AudioManager._();
+class AudioManager extends WidgetsBindingObserver {
+  AudioManager._() {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   static final AudioManager instance = AudioManager._();
 
@@ -77,5 +81,41 @@ class AudioManager {
     }
     final controller = await _getMusicController();
     await controller.stop();
+  }
+
+  // Separate from _musicClaims: claims track which screen wants music, this
+  // tracks whether the OS backgrounded the app. Leaving claims untouched here
+  // means the music resumes on its own when the app comes back to the
+  // foreground, without the still-active GameScreen having to do anything.
+  bool _musicPausedForBackground = false;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pauseMusicForBackground();
+    } else if (state == AppLifecycleState.resumed) {
+      _resumeMusicFromBackground();
+    }
+  }
+
+  Future<void> _pauseMusicForBackground() async {
+    if (_musicClaims == 0 || _musicPausedForBackground) {
+      return;
+    }
+    _musicPausedForBackground = true;
+    final controller = await _getMusicController();
+    await controller.stop();
+  }
+
+  Future<void> _resumeMusicFromBackground() async {
+    if (!_musicPausedForBackground) {
+      return;
+    }
+    _musicPausedForBackground = false;
+    if (_musicClaims == 0) {
+      return;
+    }
+    final controller = await _getMusicController();
+    await controller.start();
   }
 }

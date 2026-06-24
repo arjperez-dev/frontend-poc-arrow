@@ -923,3 +923,70 @@ comfort, that all-four-direction arrows feel natural to play), alongside the
 still-pending Phase 15 audio on-device validation and the long-pending manual
 backend/emulator smoke test (auth, sync, leaderboard against the Docker
 backend) for Phases 9–14.1.
+
+## Phase 15.1 — Pause/Resume Music on App Background (2026-06-24)
+
+### Context
+
+Follow-up to Phase 15. User reported that backgrounding the app during a
+level (pressing home / switching to another app on the phone) left the
+background music playing — nothing in `AudioManager` observed app
+visibility, so the music kept running on the OS audio session even though
+the app itself was no longer in the foreground.
+
+### What Changed
+
+- **`lib/features/audio/infrastructure/audio_manager.dart`:** `AudioManager`
+  now `extends WidgetsBindingObserver` and registers itself
+  (`WidgetsBinding.instance.addObserver(this)`) once, in the singleton's
+  private constructor. Overrides `didChangeAppLifecycleState`:
+  - `AppLifecycleState.paused` (app backgrounded) → stops the music, via a
+    new `_musicPausedForBackground` flag guard (idempotent; only acts once
+    per background transition, and only if a screen currently holds a music
+    claim).
+  - `AppLifecycleState.resumed` (app foregrounded again) → restarts the
+    music automatically, but only if `_musicPausedForBackground` was set
+    *and* `_musicClaims > 0` — so it doesn't start music out of nowhere if
+    the user backgrounded from a screen that wasn't playing music (e.g. the
+    level-selection screen).
+  - `_musicPausedForBackground` is intentionally separate from the existing
+    `_musicClaims` reference count (Phase 15's Next Level fix): claims track
+    *which screen wants music*; the new flag tracks *whether the OS, not a
+    screen, silenced it*. Keeping them independent means the still-active
+    `GameScreen` doesn't need to do anything on resume — `AudioManager`
+    restores playback on its own.
+
+### Files Touched
+
+- `lib/features/audio/infrastructure/audio_manager.dart`
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (no new tests — see Limitations).
+- `node tool/gen_levels.js --validate-only`: not applicable, no level files touched.
+
+### New Tests
+
+- None. `AppLifecycleState` transitions are not simulated by this project's
+  widget tests; see Limitations.
+
+### Limitations
+
+- No automated test covers this — same class of gap as the rest of Phase 15
+  (native/OS-level behavior that fake-based unit tests can't exercise).
+  Manual on-device check needed: start a level, background the app, confirm
+  the music stops; foreground it again, confirm the music resumes on its
+  own without navigating away from the screen.
+- Only `paused`/`resumed` are handled. `inactive` (brief OS transitions, e.g.
+  notification shade, incoming call) and `detached`/`hidden` are
+  intentionally not treated as "background" — reacting to `inactive` would
+  likely cause audible stutter on transient state changes that aren't a
+  real backgrounding.
+
+### Next Recommended Phase
+
+Same as above (Phase 16's recommendation) plus: fold this on-device check
+into the same manual validation pass as the rest of Phase 15 (crash-free
+across many level transitions, ducking, no crackling, normal-speed SFX,
+music survives Next Level, and now also survives background/foreground).

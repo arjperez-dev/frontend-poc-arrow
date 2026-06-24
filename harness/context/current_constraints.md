@@ -36,6 +36,7 @@ Check every item on this list before starting any phase. Update this file when c
 - Music volume (`AudioPlayersMusicPort._musicVolume`) must stay within `0.0–1.0` — the underlying plugin passes it unclamped into native `MediaPlayer.setVolume`; values above 1.0 cause audible clipping. Current value is `0.6` (SFX volume in `AudioPlayersAudioPort._effectsVolume` is `0.25`); the music multiplier is numerically higher than the SFX multiplier even though music should sound quieter, because perceived loudness depends on each asset's mastering level, not just the multiplier — retune both by ear on a real device, don't assume the numbers alone reflect relative loudness.
 - All SFX assets in `assets/audio/` (`move.mp3`, `blocked.mp3`, `victory.mp3`, `defeat.mp3`) must stay at the same sample rate (44100 Hz) — a mismatch (`victory.mp3` was previously 48000 Hz) contributed to playback-rate artifacts when assets share a pooled player.
 - A Clean-Architecture-compliance audit of audio/storage/network adapter code is **not** a substitute for a real-device behavior check — Phase 14 Task A audited layering only and missed five live runtime defects in the audio adapters. Don't repeat that mistake for other adapter code.
+- `AudioManager` extends `WidgetsBindingObserver` (Phase 15.1) to stop music on `AppLifecycleState.paused` and resume it on `resumed`, via a `_musicPausedForBackground` flag kept separate from `_musicClaims`. Do not merge these two pieces of state — claims track screen ownership, the flag tracks OS visibility; conflating them was exactly the kind of bug both fixes exist to prevent.
 
 ## Git
 
@@ -51,4 +52,4 @@ Check every item on this list before starting any phase. Update this file when c
 
 ---
 
-*Last updated: 2026-06-23 (Phase 16 — figure levels 16–20: heart/diamond/club/spade/crown, `--generate-figures`, 15→20 levels)*
+*Last updated: 2026-06-24 (Phase 15.1 — pause/resume music on app background via WidgetsBindingObserver)*
