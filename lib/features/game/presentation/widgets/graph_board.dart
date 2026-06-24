@@ -25,6 +25,7 @@ class GraphBoard extends StatefulWidget {
     this.lastActivatedArrowId,
     this.flashingArrowId,
     this.animate = true,
+    this.onInteractionActiveChanged,
     super.key,
   });
 
@@ -38,6 +39,13 @@ class GraphBoard extends StatefulWidget {
   /// When false (tests), no tickers/animations are started; the final resolved
   /// state is rendered immediately.
   final bool animate;
+
+  /// Called with `true` while at least one finger is touching the board, and
+  /// `false` once all of them lift. An ancestor scroll view should pause its
+  /// own scrolling while this is `true` — otherwise a pinch gesture started
+  /// on the board can be partly "stolen" by the ancestor's drag recognizer
+  /// before the second finger lands, making pinch-zoom feel unresponsive.
+  final ValueChanged<bool>? onInteractionActiveChanged;
 
   @override
   State<GraphBoard> createState() => _GraphBoardState();
@@ -53,6 +61,8 @@ class _GraphBoardState extends State<GraphBoard>
 
   /// Pan/zoom transform for dense boards. Reset via the reset-view button.
   final TransformationController _viewController = TransformationController();
+
+  int _activePointers = 0;
 
   @override
   void initState() {
@@ -166,28 +176,42 @@ class _GraphBoardState extends State<GraphBoard>
 
             // Pan/zoom for dense boards. The tap GestureDetector lives inside
             // the transformed child, so hit testing stays in child coordinates.
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: InteractiveViewer(
-                    transformationController: _viewController,
-                    minScale: 1.0,
-                    maxScale: 4.0,
-                    boundaryMargin: const EdgeInsets.all(24),
-                    child: board,
+            return Listener(
+              onPointerDown: (_) => _onPointerCountChanged(_activePointers + 1),
+              onPointerUp: (_) => _onPointerCountChanged(_activePointers - 1),
+              onPointerCancel: (_) => _onPointerCountChanged(_activePointers - 1),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: InteractiveViewer(
+                      transformationController: _viewController,
+                      minScale: 1.0,
+                      maxScale: 4.0,
+                      boundaryMargin: const EdgeInsets.all(24),
+                      child: board,
+                    ),
                   ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: _ResetViewButton(onPressed: _resetView),
-                ),
-              ],
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: _ResetViewButton(onPressed: _resetView),
+                  ),
+                ],
+              ),
             );
           },
         ),
       ),
     );
+  }
+
+  void _onPointerCountChanged(int newCount) {
+    final wasActive = _activePointers > 0;
+    _activePointers = math.max(0, newCount);
+    final isActive = _activePointers > 0;
+    if (isActive != wasActive) {
+      widget.onInteractionActiveChanged?.call(isActive);
+    }
   }
 
   void _resetView() {

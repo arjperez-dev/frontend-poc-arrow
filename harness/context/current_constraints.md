@@ -38,6 +38,12 @@ Check every item on this list before starting any phase. Update this file when c
 - A Clean-Architecture-compliance audit of audio/storage/network adapter code is **not** a substitute for a real-device behavior check — Phase 14 Task A audited layering only and missed five live runtime defects in the audio adapters. Don't repeat that mistake for other adapter code.
 - `AudioManager` extends `WidgetsBindingObserver` (Phase 15.1) to stop music on `AppLifecycleState.paused` and resume it on `resumed`, via a `_musicPausedForBackground` flag kept separate from `_musicClaims`. Do not merge these two pieces of state — claims track screen ownership, the flag tracks OS visibility; conflating them was exactly the kind of bug both fixes exist to prevent.
 
+## Board Rendering / Interaction (Phase 17/18)
+
+- `GraphBoardLayout.step` (px per grid cell) is the single source of truth for scaling board visuals to density. `GraphBoardPainter`'s stroke width and arrowhead length/width, and `GraphBoardHitTester.hitSlop`, all derive from it (each capped at its pre-Phase-17 fixed value, floored so it never disappears). If you add another size-sensitive visual to the board, scale it from `layout.step` the same way — don't reintroduce a fixed pixel constant that silently overlaps on dense boards (hard tier, figure levels 16–20).
+- `GraphBoard`'s `AspectRatio` is computed from the level's own node bounding box (`_boardAspectRatio`, clamped `[0.6, 1.6]`), not hardcoded to 1. Don't revert this to a fixed square without checking how it affects figure-level layouts (15, 19, 20 are notably non-square).
+- `GraphBoard.onInteractionActiveChanged` + `GameScreen._lockPageScroll` exist specifically to stop the page-level `ListView` from competing with `InteractiveViewer`'s pinch gesture (a Flutter gesture-arena race: the ancestor `Scrollable` can claim the first finger before the second lands). If you restructure `GameScreen`'s layout or `GraphBoard`'s gesture handling, preserve this pointer-count → scroll-lock coupling, or pinch-to-zoom will regress to being hard to start.
+
 ## Git
 
 - Never work on `main`.
@@ -52,4 +58,4 @@ Check every item on this list before starting any phase. Update this file when c
 
 ---
 
-*Last updated: 2026-06-24 (Phase 15.1 — pause/resume music on app background via WidgetsBindingObserver)*
+*Last updated: 2026-06-24 (Phase 17/18 — board rendering polish: cell-size-relative scaling for stroke/arrowhead/hit-slop, non-square board aspect ratio; pinch-to-zoom reliability fix via pointer-count-driven scroll lock)*

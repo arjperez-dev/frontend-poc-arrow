@@ -49,6 +49,12 @@ class _GameScreenState extends State<GameScreen> {
   BackgroundMusicController? _injectedMusicController;
   bool _ownsMusicLifecycle = false;
 
+  // While a finger is touching the board, the page must not scroll — an
+  // ancestor ListView competing for the same pointers is what makes
+  // pinch-to-zoom on the board feel unresponsive (see GraphBoard's
+  // onInteractionActiveChanged doc comment).
+  bool _lockPageScroll = false;
+
   @override
   void initState() {
     super.initState();
@@ -152,6 +158,12 @@ class _GameScreenState extends State<GameScreen> {
                 onBackToLevels: _backToLevels,
                 onNextLevel: _openNextLevel,
                 onOpenLeaderboard: _openLeaderboard,
+                lockPageScroll: _lockPageScroll,
+                onBoardInteractionActiveChanged: (active) {
+                  if (active != _lockPageScroll) {
+                    setState(() => _lockPageScroll = active);
+                  }
+                },
               ),
             },
           ),
@@ -193,6 +205,8 @@ class _GameReadyView extends StatelessWidget {
     required this.onBackToLevels,
     required this.onNextLevel,
     required this.onOpenLeaderboard,
+    required this.lockPageScroll,
+    required this.onBoardInteractionActiveChanged,
   });
 
   final GameScreenController controller;
@@ -200,6 +214,11 @@ class _GameReadyView extends StatelessWidget {
   final VoidCallback onBackToLevels;
   final VoidCallback onNextLevel;
   final VoidCallback onOpenLeaderboard;
+
+  /// When true, an in-progress touch on the board means the page itself must
+  /// not scroll (see GameScreen's `_lockPageScroll` doc comment).
+  final bool lockPageScroll;
+  final ValueChanged<bool> onBoardInteractionActiveChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -211,6 +230,9 @@ class _GameReadyView extends StatelessWidget {
       children: [
         ListView(
           padding: const EdgeInsets.all(20),
+          physics: lockPageScroll
+              ? const NeverScrollableScrollPhysics()
+              : const ClampingScrollPhysics(),
           children: [
             _GameHud(session: session),
             const SizedBox(height: 18),
@@ -220,6 +242,7 @@ class _GameReadyView extends StatelessWidget {
               flashingArrowId: controller.flashingArrowId,
               animate: animateBoard,
               onArrowActivated: controller.activateArrow,
+              onInteractionActiveChanged: onBoardInteractionActiveChanged,
             ),
             const SizedBox(height: 18),
             if (!controller.isVictory && !controller.isGameOver)

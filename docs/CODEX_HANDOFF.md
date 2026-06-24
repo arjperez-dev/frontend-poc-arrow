@@ -990,3 +990,171 @@ Same as above (Phase 16's recommendation) plus: fold this on-device check
 into the same manual validation pass as the rest of Phase 15 (crash-free
 across many level transitions, ducking, no crackling, normal-speed SFX,
 music survives Next Level, and now also survives background/foreground).
+
+## Phase 17 — Game Board Rendering Polish (2026-06-23/24)
+
+### Context
+
+User-reported visual/usability issues on the game board, distinct from the
+gameplay-rules work in Phases 9–14.1: nodes always rendered as solid opaque
+white circles regardless of game state, the arrow color palette was muted
+pastel, and on dense boards (hard tier, the new figure levels) arrowhead
+tips visually drew over neighbouring arrows and taps near a cluster of
+arrows could register the wrong one. Branch `feat/frontend-rendering`,
+merged via two PRs (#4, #5) onto `develop`.
+
+### What Changed
+
+- **`lib/core/theme/app_theme.dart`:** added a 5-color neon palette —
+  `neonBlue`, `neonGreen`, `neonYellow`, `neonPink`, `neonPurple`.
+- **`lib/features/game/presentation/widgets/graph_board_painter.dart`:**
+  - `_colorForArrow` switched from the old 4-color pastel palette
+    (`neonMint`, two hardcoded hex pinks/blues, `pastelAmber`) to the new
+    5-color neon palette.
+  - Node rendering now depends on coverage: a node still occupied by an
+    active arrow (`coveredNodeIds`, built from `session.activeArrows`'
+    `orderedNodeIds`) is drawn almost invisible (alpha 0.08, radius 3). A
+    node not covered by any active arrow — i.e. freed once the arrow over
+    it escapes — gets a lighter/translucent halo+dot (alpha 0.16 / 0.5)
+    instead of the previous fully-opaque white circle. Net effect: at level
+    start, every node is covered (per the no-free-nodes rule), so only
+    arrows are visible; nodes light up progressively as arrows escape.
+  - Stroke width and arrowhead length/width are now capped relative to the
+    board's pixel cell size (`layout.step`) instead of fixed constants:
+    `_arrowStrokeWidth` and the length/width calc inside `_drawArrowHead`
+    use `math.min(originalConstant, cellSize * factor)`, floored so they
+    never disappear. On boards spacious enough (cell ≳ 43px — true for most
+    of levels 1–15) this is a no-op (same fixed 12px stroke / 18px head as
+    before); on dense boards it shrinks proportionally so the arrowhead tip
+    never reaches far enough to draw over a neighbouring arrow.
+- **`lib/features/game/presentation/widgets/graph_board_layout.dart`:**
+  added a `step` field (pixel distance between adjacent grid coordinates),
+  computed in `fromGraph` and exposed for the painter and hit-tester to
+  scale against.
+- **`lib/features/game/presentation/widgets/graph_board_hit_tester.dart`:**
+  `hitSlop` (tap tolerance) is no longer a fixed 28px radius — it now scales
+  with `layout.step`, capped at 45% of cell spacing (so the tolerance radius
+  around one node never reaches halfway to its neighbour) and floored at
+  12px. Unaffected for any board with cell size ≥ ~62px (cap stays at the
+  old 28px); on dense boards this prevents a single tap from matching
+  multiple adjacent arrows depending on iteration order.
+- **`lib/features/game/presentation/widgets/graph_board.dart`:** the
+  board's `AspectRatio` now matches the level's own node-bounding-box
+  aspect ratio (`_boardAspectRatio`, clamped to `[0.6, 1.6]`) instead of
+  always forcing a square. Square-ish levels (most of 1–15) are unaffected;
+  a level that's notably taller or wider than the other axis gets real
+  extra pixels on its longer dimension instead of that space going unused.
+
+### Files Touched
+
+- `lib/core/theme/app_theme.dart`
+- `lib/features/game/presentation/widgets/graph_board_painter.dart`
+- `lib/features/game/presentation/widgets/graph_board_layout.dart`
+- `lib/features/game/presentation/widgets/graph_board_hit_tester.dart`
+- `lib/features/game/presentation/widgets/graph_board.dart`
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (no new tests — see Limitations).
+- `node tool/gen_levels.js --validate-only`: not applicable, no level files
+  touched.
+
+### New Tests
+
+- None. Presentation-only visual/interaction tuning; no test file asserts
+  exact pixel colors, node alpha, or hit-slop radius values.
+
+### Limitations
+
+- No automated regression test for the visual change (node alpha, neon
+  colors) or the hit-slop/aspect-ratio tuning — these are exactly the kind
+  of presentation-layer behavior this project's fake-based widget tests
+  don't assert pixel-level detail on. Manual on-device/emulator check still
+  recommended: confirm nodes are nearly invisible at level start and light
+  up as arrows escape, confirm dense levels (hard tier, figure levels
+  16–20) no longer show arrowhead tips overlapping neighbouring arrows, and
+  confirm taps register the intended arrow on a dense board.
+
+## Phase 18 — Pinch-to-Zoom Reliability Fix (2026-06-24)
+
+### Context
+
+Follow-up to Phase 17. User reported that pinch-to-zoom on the board is
+hard to "grab" — the gesture frequently fails to start cleanly, requiring
+multiple attempts.
+
+### Root Cause
+
+`GraphBoard`'s `InteractiveViewer` is nested inside the page-level
+`ListView` in `game_screen.dart`'s `_GameReadyView` (the whole screen —
+HUD, board, buttons — scrolls as one list). This is a known Flutter gotcha:
+when a pinch gesture starts, the first finger's initial contact can be
+claimed by the ancestor `ListView`'s vertical-drag recognizer (via Flutter's
+gesture arena) before the second finger lands and `InteractiveViewer`'s own
+`ScaleGestureRecognizer` can claim both pointers. Once the ancestor has
+"won" one of the two pointers, the scale recognizer never gets a clean
+two-finger gesture, so the pinch doesn't register reliably — the user has
+to land both fingers almost perfectly simultaneously to avoid the race.
+
+### What Changed
+
+- **`lib/features/game/presentation/widgets/graph_board.dart`:**
+  - Added `onInteractionActiveChanged: ValueChanged<bool>?` to `GraphBoard`.
+  - `_GraphBoardState` now wraps the board's `Stack` (the `InteractiveViewer`
+    + reset-view button) in a `Listener` that tracks `_activePointers` via
+    `onPointerDown`/`onPointerUp`/`onPointerCancel`. `_onPointerCountChanged`
+    calls `widget.onInteractionActiveChanged` only on the 0→1 and 1→0
+    transitions (not on every pointer event), reporting `true` while at
+    least one finger touches the board.
+- **`lib/features/game/presentation/game_screen.dart`:**
+  - `_GameScreenState` gained `bool _lockPageScroll`, flipped by a callback
+    passed as `GraphBoard.onInteractionActiveChanged` (via `_GameReadyView`).
+  - `_GameReadyView`'s `ListView` now sets
+    `physics: lockPageScroll ? NeverScrollableScrollPhysics() : ClampingScrollPhysics()`.
+  - Net effect: as soon as any finger touches the board, the page-level
+    `ListView` stops being scrollable, so it can never claim a pointer that
+    started on the board — `InteractiveViewer`'s scale recognizer gets
+    uncontested control of the gesture. The lock releases the instant all
+    fingers lift, so normal page scrolling (e.g. on level-complete, to reach
+    the buttons) is unaffected.
+
+### Files Touched
+
+- `lib/features/game/presentation/widgets/graph_board.dart`
+- `lib/features/game/presentation/game_screen.dart`
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 122/122 passed (no new tests — see Limitations).
+- `node tool/gen_levels.js --validate-only`: not applicable, no level files
+  touched.
+
+### New Tests
+
+- None. Multi-touch gesture-arena races between a `Listener`/`InteractiveViewer`
+  and an ancestor `Scrollable` are not reproducible through this project's
+  widget-test harness (synthetic `tester.tap`/`tester.drag` calls inject a
+  single synthetic pointer sequence, not the real two-finger race condition
+  being fixed). Same category of gap as Phase 15/15.1's native-behavior
+  fixes.
+
+### Limitations
+
+- Manual on-device/emulator verification still needed: confirm a pinch
+  gesture started anywhere on the board reliably scales on the first
+  attempt, and confirm the page still scrolls normally via touches that
+  start outside the board (HUD, buttons, whitespace).
+- This commit was pending at write time — see `harness/context/phase_registry.md`
+  for status once merged.
+
+### Next Recommended Phase
+
+Manual on-device validation pass covering Phases 15/15.1/17/18 together
+(audio crash/ducking/crackling/playback-rate/background-pause, board node
+visibility and neon colors, dense-level tap accuracy, and pinch-to-zoom
+reliability) — this is now the largest block of "implemented but only
+verified by automated tests" work in the project. After that: the
+long-pending manual backend/emulator smoke test (auth, sync, leaderboard
+against the Docker backend) for Phases 9–14.1.
