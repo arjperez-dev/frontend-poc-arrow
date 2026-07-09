@@ -389,6 +389,55 @@ void main() {
     }
   });
 
+  test('should_have_no_real_interior_gap_exits_in_figure_levels', () async {
+    // Phase 19: figure levels (16-20) skip the blanket bbox gap check above
+    // because a concave silhouette's own outer edge produces harmless
+    // bbox-interior gaps. But a gap is still a real P14-class defect if the
+    // head sweep, after passing through it, reaches ANOTHER arrow's node —
+    // a hidden blocker the resolver would skip past. This mirrors
+    // hasRealInteriorGapExit in tool/gen_levels.js.
+    final levels = (await GetLocalLevelsUseCase(repository)())
+        .where((level) => level.metadata['generationType'] == 'figure');
+    for (final level in levels) {
+      final graph = level.boardGraph;
+      final nodes = graph.nodes;
+      final xs = nodes.map((n) => n.coordinate.x);
+      final ys = nodes.map((n) => n.coordinate.y);
+      final minX = xs.reduce((a, b) => a < b ? a : b);
+      final maxX = xs.reduce((a, b) => a > b ? a : b);
+      final minY = ys.reduce((a, b) => a < b ? a : b);
+      final maxY = ys.reduce((a, b) => a > b ? a : b);
+
+      for (final arrow in level.arrows) {
+        final head = graph.nodeById(arrow.endNodeId)!;
+        final dir = arrow.direction;
+        var cx = head.coordinate.x;
+        var cy = head.coordinate.y;
+        var sawGap = false;
+        while (true) {
+          cx += dir.dx;
+          cy += dir.dy;
+          if (cx < minX || cx > maxX || cy < minY || cy > maxY) break;
+          final next = graph.nodeByCoordinate(
+            BoardCoordinate(x: cx, y: cy),
+          );
+          if (next == null) {
+            sawGap = true;
+            continue;
+          }
+          expect(
+            sawGap,
+            isFalse,
+            reason: 'Level ${level.number} arrow ${arrow.id} exits through '
+                'a gap and then hits node $next at ($cx,$cy) — real '
+                'hidden-blocker defect, not a harmless shape concavity',
+          );
+          break;
+        }
+      }
+    }
+  });
+
   test('should_have_bent_arrows_in_every_difficulty_tier', () async {
     final levels = await GetLocalLevelsUseCase(repository)();
 

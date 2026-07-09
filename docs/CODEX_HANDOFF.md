@@ -1158,3 +1158,85 @@ reliability) — this is now the largest block of "implemented but only
 verified by automated tests" work in the project. After that: the
 long-pending manual backend/emulator smoke test (auth, sync, leaderboard
 against the Docker backend) for Phases 9–14.1.
+
+## Phase 19 — Level Audit & Validation (figure-aware gap-exit fix) (2026-07-09)
+
+### What Changed
+
+- Audited levels 1–15 (no regression — all still `gapExit=-`, clean structure)
+  and deep-audited figure levels 16–20 against the exact Phase 14 gap-exit bug
+  class, Phase 14.1 self-intersection, shape validity, disjointness,
+  no-free-nodes, solvability, density, and direction variety.
+- Found 5 real interior-gap-exit defects in the shipped figure levels (18×1,
+  19×1, 20×3) — `generateFigureLevel`'s blanket exemption from
+  `hasInteriorGapExit` hid genuine hidden-blocker escapes, not just harmless
+  shape concavities.
+- Added `hasRealInteriorGapExit(dj)` to `tool/gen_levels.js`: a figure-aware
+  gap check that only flags a gap as defective when the head sweep, after
+  passing through it, reaches another arrow's node (a real hidden blocker) —
+  a harmless silhouette concavity (gap leading only to the true boundary) is
+  no longer rejected.
+- Wired the new check into both `generateFigureLevel` (reject-and-retry) and
+  `validateAll` (figures now validated for real gap-exits instead of being
+  fully exempted).
+- Raised `FIGURE_MAX_RETRIES` from 20,000 to 100,000: quantified exhaustion
+  risk under the stricter check was as high as ~5% for spade (19) and ~1.8%
+  for crown (20) at 20,000 retries; 100,000 drives this to negligible
+  (<1e-6) for all five figures. Regeneration only needed 1,026–4,518 attempts
+  per figure in practice.
+- Regenerated `assets/levels/manual_levels.json` via `--generate-figures`
+  (levels 16–20 only); levels 1–15 verified byte-identical.
+- Fixed a compounding rendering defect found during the audit: `hitSlop`'s
+  `minHitSlop` floor (12px) exceeded `cellSize * 0.45` on every figure level
+  (steps ~15.3–20.3px), silently overriding the documented "never reach
+  halfway to neighbour" invariant — worst on crown (56% over cap). Lowered
+  `minHitSlop` to 6px in `graph_board_hit_tester.dart`, which clears the cap
+  with margin on all five figures.
+- Confirmed via independent simulation (not reusing generator code): 0
+  self-intersecting arrows across all 166 arrows in levels 16–20; arrowhead
+  length/width coefficients (0.42/0.26 of step) stay under half-step at all
+  measured figure steps, so no arrowhead-overlap risk; the board `AspectRatio`
+  clamp `[0.6, 1.6]` works correctly (only crown's 1.8 raw ratio is clamped).
+
+### Files Touched
+
+- `tool/gen_levels.js`
+- `lib/features/game/presentation/widgets/graph_board_hit_tester.dart`
+- `assets/levels/manual_levels.json` (levels 16–20 only; 1–15 unchanged)
+- `test/features/game/infrastructure/manual_levels_test.dart`
+- `test/features/game/presentation/graph_board_hit_tester_test.dart` (new)
+
+### Verification Results
+
+- `flutter analyze`: passed, 0 issues.
+- `flutter test`: 124/124 passed (122 baseline + 2 new).
+- `node tool/gen_levels.js --validate-only`: `ALL VALID: true` (previously
+  `false` — levels 18/19/20 showed `gapExit=Y` under the corrected check
+  before regeneration).
+
+### New Tests
+
+- `should_have_no_real_interior_gap_exits_in_figure_levels` — figure-aware
+  gap-exit regression test mirroring `hasRealInteriorGapExit`.
+- `should_keep_hit_slop_floor_below_half_cell_on_dense_figure_boards` — new
+  file `graph_board_hit_tester_test.dart`, regression-tests the `minHitSlop`
+  invariant against the real shipped figure-level layouts.
+
+### Limitations
+
+- Rendering audit (arrowhead overlap, `AspectRatio` clamp, `hitSlop`) was
+  static/analytical against the painter/hit-tester formulas and real level
+  geometry, not a live emulator/on-device pass — still recommended as part
+  of the standing Phase 15/15.1/17/18 manual-verification backlog.
+- Crown (20) and spade (19) remain the tightest figures by raw solvable-
+  partition rate (~0.02%/0.015% post-fix); if a future geometry change makes
+  them tighter still, revisit mask tuning per `LEVEL_AUTHORING.md §15` rather
+  than raising `FIGURE_MAX_RETRIES` further.
+
+### Next Recommended Phase
+
+Manual on-device validation pass covering Phases 15/15.1/17/18/19 together
+(audio, board rendering/neon colors, dense-level tap accuracy including the
+new figure-level `hitSlop` fix, pinch-to-zoom, and the regenerated crown/
+spade/club figure levels) — then the long-pending backend/emulator smoke test
+for Phases 9–14.1.

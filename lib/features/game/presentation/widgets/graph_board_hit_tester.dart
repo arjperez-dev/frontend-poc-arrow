@@ -5,14 +5,17 @@ import '../../domain/game_session.dart';
 import 'graph_board_layout.dart';
 
 class GraphBoardHitTester {
-  const GraphBoardHitTester({this.maxHitSlop = 28, this.minHitSlop = 12});
+  const GraphBoardHitTester({this.maxHitSlop = 28, this.minHitSlop = 6});
 
   /// Tap tolerance on boards spacious enough that this never reaches a
   /// neighbouring cell.
   final double maxHitSlop;
 
-  /// Floor for dense boards, where the full [maxHitSlop] would overlap the
-  /// next cell and make taps ambiguous between adjacent arrows.
+  /// Floor so taps stay usable on very dense boards. Must stay below
+  /// `cellSize * 0.45` for the smallest step actually reached by any level
+  /// (figure levels 16-20 run as low as ~15.3px/cell, cap ~6.9px) — a floor
+  /// above that cap would override the 0.45 tolerance and let taps overlap
+  /// a neighbouring node/arrow (found in Phase 19 audit).
   final double minHitSlop;
 
   String? findArrowAt({

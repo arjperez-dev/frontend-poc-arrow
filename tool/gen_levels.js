@@ -531,11 +531,11 @@ function generateLevel(number, name, difficulty, meta, baseSeed) {
 // why several of levels 1-15 are missing a direction entirely. Figure levels
 // must use all four directions so every escape has arrows leaving every way.
 // ---------------------------------------------------------------------------
-const FIGURE_MAX_RETRIES = 20000;
+const FIGURE_MAX_RETRIES = 100000;
 
 function generateFigureLevel(number, name, meta, seed, nodeSetFactory, maxPathLen, band) {
   const reject = { coverage: 0, density: 0, noBent: 0, disconnected: 0,
-    selfIntersect: 0, directionVariety: 0, unsolvable: 0 };
+    gapExit: 0, selfIntersect: 0, directionVariety: 0, unsolvable: 0 };
   for (let attempt = 0; attempt < FIGURE_MAX_RETRIES; attempt++) {
     const rng = makePRNG(seed + attempt * 97);
     const nodeSet = nodeSetFactory();
@@ -564,18 +564,14 @@ function generateFigureLevel(number, name, meta, seed, nodeSetFactory, maxPathLe
     if (!dj.arrows.some(a => a.occupiedEdges.length >= 2)) { reject.noBent++; continue; }
     if (connectedComponents(dj) !== 1) { reject.disconnected++; continue; }
 
-    // hasInteriorGapExit/flipInteriorGapArrows are deliberately NOT applied
-    // here. That check exists for the random tiers (1-15), where a sparse,
-    // accidental boundary-removal hole inside an otherwise-rectangular board
-    // could make an arrow exit early past a visible blocker. A figure-level
-    // silhouette (heart/diamond/club/spade/star) is mathematically simply
-    // connected (no enclosed holes — verified via keepLargestComponent and
-    // ASCII-raster inspection per shape) and is deliberately, visibly
-    // non-rectangular: every "missing" cell inside the bounding box is part
-    // of the shape's own concave outer edge, clearly empty background to the
-    // player, not an invisible defect. Treating every concave dent as a gap
-    // would reject every possible partition (verified empirically: 100% of
-    // coverage-passing attempts failed this check before it was removed).
+    // The blanket hasInteriorGapExit is deliberately NOT applied here — it
+    // false-positives on every concave dent in a figure silhouette (100% of
+    // coverage-passing attempts failed it, per Phase 16 notes). Instead use
+    // the figure-aware hasRealInteriorGapExit (Phase 19), which only rejects
+    // a gap that hides a real blocker (another arrow's node past the gap) —
+    // the actual P14-class defect — while allowing harmless shape concavities.
+    if (hasRealInteriorGapExit(dj)) { reject.gapExit++; continue; }
+
     if (hasSelfIntersectingArrow(dj)) { reject.selfIntersect++; continue; }
 
     // All four directions required, each with a meaningful share — not just
@@ -906,6 +902,36 @@ function hasInteriorGapExit(dj) {
   return false;
 }
 
+// Figure-aware interior gap-exit check (Phase 19). hasInteriorGapExit flags
+// EVERY bbox-interior empty coordinate, which false-positives on concave
+// figure silhouettes (a dent in a heart/crown outline is a legitimate part of
+// the shape, not a defect). This version only flags a gap as a real P14-class
+// defect when the head sweep, after passing through the gap, reaches an
+// ACTUAL node belonging to another arrow — i.e. a hidden blocker the resolver
+// would skip over. A gap that leads only to the true bbox boundary (or to no
+// further node at all) is a harmless concavity.
+function hasRealInteriorGapExit(dj) {
+  const byId = indexDj(dj);
+  const xs = dj.nodes.map(n => n.x), ys = dj.nodes.map(n => n.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  for (const arrow of dj.arrows) {
+    const head = byId.nodes[arrow.endNodeId];
+    if (!head) continue;
+    const [dx, dy] = DELTA[arrow.direction];
+    let cx = head.x, cy = head.y, sawGap = false;
+    while (true) {
+      cx += dx; cy += dy;
+      if (cx < minX || cx > maxX || cy < minY || cy > maxY) break; // true boundary
+      const nId = nodeAtCoord(byId, cx, cy);
+      if (!nId) { sawGap = true; continue; } // concavity cell, keep scanning
+      if (sawGap) return true; // hidden blocker past a gap: real P14-class defect
+      break; // node reached with no prior gap: normal collision, not a defect
+    }
+  }
+  return false;
+}
+
 // Reverse any arrow whose head sweep exits through an interior gap so that its
 // head exits from the OTHER end instead. The body-behind-head invariant is
 // preserved by computing the new exit direction from the FIRST step of the
@@ -984,13 +1010,13 @@ function validateAll(levels) {
     const se = structureErrors(dj), free = noFreeNodes(dj);
     const sv = solvableGreedy(dj), sh = shapeOf(dj);
     const shared = noSharedNodes(dj);
-    const gapExit = hasInteriorGapExit(dj);
-    // Figure levels (16-20) are deliberately concave silhouettes: every
-    // bbox-interior "gap" is part of the shape's own visible outer edge, not
-    // an accidental hole (see the comment in generateFigureLevel). Only the
-    // random tiers (1-15) — nearly-rectangular boards where a gap is a real
-    // generation defect — are held to this check.
+    // Figure levels (16-20) are deliberately concave silhouettes: a bbox-
+    // interior "gap" can be a legitimate part of the shape's own visible
+    // outer edge, not an accidental hole. Random tiers (1-15) use the
+    // blanket bbox check; figures use the figure-aware check (Phase 19) that
+    // only flags a gap when it hides a real blocker past it.
     const isFigure = dj.metadata && dj.metadata.generationType === 'figure';
+    const gapExit = isFigure ? hasRealInteriorGapExit(dj) : hasInteriorGapExit(dj);
     const components = connectedComponents(dj), n = dj.arrows.length;
     if (arrowsByTier[diff]) arrowsByTier[diff].push(n);
     const band = DENSITY[diff]; let densityErr = '';
@@ -998,7 +1024,7 @@ function validateAll(levels) {
       if (n < band.min || n > band.max) densityErr = `density ${n} out of [${band.min},${band.max}]`;
       else if (band.warn && n > band.warn) warnings.push(`#${lvl.number} dense (${n} arrows, >${band.warn})`);
     }
-    const bad = se.length || free || !sv || densityErr || components !== 1 || shared || (gapExit && !isFigure);
+    const bad = se.length || free || !sv || densityErr || components !== 1 || shared || gapExit;
     if (bad) ok = false;
     console.log(
       '#' + String(lvl.number).padStart(2) + ' ' + (lvl.name || '').padEnd(15) +
@@ -1010,7 +1036,7 @@ function validateAll(levels) {
       ' comp=' + components +
       ' free=' + (free ? JSON.stringify(free) : '-') +
       ' shared=' + (shared ? JSON.stringify(shared) : '-') +
-      ' gapExit=' + (gapExit ? (isFigure ? 'Y(figure-ok)' : 'Y') : '-') +
+      ' gapExit=' + (gapExit ? 'Y' : '-') +
       ' solvable=' + sv +
       (components !== 1 ? ' DISCONNECTED(' + components + ')' : '') +
       (densityErr ? ' ' + densityErr.toUpperCase() : '') +
