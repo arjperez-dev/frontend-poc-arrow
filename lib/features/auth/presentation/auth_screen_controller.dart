@@ -12,11 +12,14 @@ class AuthScreenController extends ChangeNotifier {
   AuthScreenController({
     required LoginUseCase login,
     required RegisterUseCase register,
+    Future<void> Function(String userId)? syncProgressOnLogin,
   }) : _login = login,
-       _register = register;
+       _register = register,
+       _syncProgressOnLogin = syncProgressOnLogin;
 
   final LoginUseCase _login;
   final RegisterUseCase _register;
+  final Future<void> Function(String userId)? _syncProgressOnLogin;
 
   AuthMode _mode = AuthMode.login;
   AuthScreenStatus _status = AuthScreenStatus.idle;
@@ -61,6 +64,15 @@ class AuthScreenController extends ChangeNotifier {
               email: email.trim(),
               password: password,
             );
+      final syncProgressOnLogin = _syncProgressOnLogin;
+      if (syncProgressOnLogin != null) {
+        try {
+          await syncProgressOnLogin(_session!.user.id);
+        } catch (_) {
+          // Sync failure must not block login; local progress remains safe.
+        }
+      }
+
       _status = AuthScreenStatus.success;
       notifyListeners();
     } catch (error) {

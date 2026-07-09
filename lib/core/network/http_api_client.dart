@@ -39,6 +39,11 @@ class HttpApiClient implements ApiClient {
     return _send('PUT', path, body: body, authenticated: authenticated);
   }
 
+  @override
+  Future<Object?> delete(String path, {bool authenticated = false}) {
+    return _send('DELETE', path, authenticated: authenticated);
+  }
+
   Future<Object?> _send(
     String method,
     String path, {
@@ -70,6 +75,7 @@ class HttpApiClient implements ApiClient {
           headers: headers,
           body: body == null ? null : jsonEncode(body),
         ),
+        'DELETE' => await _httpClient.delete(uri, headers: headers),
         _ => throw ArgumentError.value(method, 'method'),
       };
       return _decodeResponse(response);

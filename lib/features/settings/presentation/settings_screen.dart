@@ -42,6 +42,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           await SettingsDependencies.createSavePlayerSettingsUseCase(),
       resetLocalProgress:
           await LocalProgressDependencies.createResetLocalProgressUseCase(),
+      resetRemoteProgress:
+          await LocalProgressDependencies.createResetRemoteProgressUseCase(),
       getAuthSession: await AuthDependencies.createGetAuthSessionUseCase(),
       logout: await AuthDependencies.createLogoutUseCase(),
       syncProgress:
@@ -144,8 +146,65 @@ class _SettingsContent extends StatelessWidget {
           icon: const Icon(Icons.restart_alt_rounded),
           label: Text(localizations.resetProgress),
         ),
+        const SizedBox(height: 12),
+        if (controller.isLoggedIn)
+          FilledButton.tonalIcon(
+            key: GameUiKeys.resetRemoteProgressButton,
+            onPressed: controller.resettingRemote
+                ? null
+                : () => _confirmResetRemoteProgress(context),
+            icon: const Icon(Icons.cloud_off_rounded),
+            label: Text(
+              controller.resettingRemote
+                  ? localizations.loadingSettings
+                  : localizations.resetRemoteProgress,
+            ),
+          )
+        else
+          Text(localizations.resetRemoteProgressLoginRequired),
       ],
     );
+  }
+
+  Future<void> _confirmResetRemoteProgress(BuildContext context) async {
+    final localizations = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(localizations.resetRemoteProgress),
+          content: Text(localizations.resetRemoteProgressConfirmation),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(localizations.cancel),
+            ),
+            FilledButton(
+              key: GameUiKeys.confirmResetRemoteProgressButton,
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(localizations.resetRemoteProgress),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    final result = await controller.resetRemoteProgress();
+    if (!context.mounted) {
+      return;
+    }
+    final message = switch (result) {
+      RemoteResetResult.success => localizations.remoteProgressReset,
+      RemoteResetResult.offline => localizations.remoteResetOfflineMessage,
+      RemoteResetResult.unauthenticated =>
+        localizations.resetRemoteProgressLoginRequired,
+      RemoteResetResult.failed => localizations.remoteResetFailedMessage,
+    };
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _confirmResetProgress(BuildContext context) async {

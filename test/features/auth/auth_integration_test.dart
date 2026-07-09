@@ -58,6 +58,10 @@ class _FakeApiClient implements ApiClient {
     Object? body,
     bool authenticated = false,
   }) async => null;
+
+  @override
+  Future<Object?> delete(String path, {bool authenticated = false}) async =>
+      null;
 }
 
 class _InMemoryTokenStorage implements TokenStorage {

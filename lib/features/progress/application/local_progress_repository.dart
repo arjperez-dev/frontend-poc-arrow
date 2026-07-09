@@ -6,4 +6,8 @@ abstract interface class LocalProgressRepository {
   Future<void> saveProgress(LocalProgress progress);
 
   Future<void> resetProgress();
+
+  Future<String?> getLastSyncedUserId();
+
+  Future<void> setLastSyncedUserId(String? userId);
 }

@@ -10,4 +10,6 @@ abstract interface class RemoteProgressRepository {
     required int? bestMoves,
     required int? bestTimeSeconds,
   });
+
+  Future<void> resetProgress();
 }

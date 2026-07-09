@@ -13,8 +13,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('Nodus'), findsOneWidget);
-    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('Levels'), findsOneWidget);
+    expect(find.text('Leaderboard'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Game Mode'), findsOneWidget);
     expect(find.text('http://10.0.2.2:3000'), findsOneWidget);
   });
 
@@ -24,7 +26,7 @@ void main() {
     await tester.pumpWidget(const ArrowPocApp());
     await tester.pump();
 
-    await tester.tap(find.text('Play'));
+    await tester.tap(find.text('Levels'));
     await _pumpUntilFound(tester, find.byKey(GameUiKeys.levelCard(1)));
 
     expect(find.text('Level 1'), findsOneWidget);

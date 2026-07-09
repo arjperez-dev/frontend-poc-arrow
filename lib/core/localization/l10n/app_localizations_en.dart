@@ -21,6 +21,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get levels => 'Levels';
 
   @override
+  String get gameMode => 'Game Mode';
+
+  @override
   String get gamePlaceholder => 'Game placeholder';
 
   @override
@@ -107,6 +110,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get progressReset => 'Local progress reset.';
+
+  @override
+  String get resetRemoteProgress => 'Reset remote progress';
+
+  @override
+  String get resetRemoteProgressConfirmation =>
+      'This clears your progress stored on the server, then also resets local progress. Settings stay unchanged.';
+
+  @override
+  String get remoteProgressReset => 'Remote and local progress reset.';
+
+  @override
+  String get resetRemoteProgressLoginRequired =>
+      'Log in to reset remote progress.';
+
+  @override
+  String get remoteResetOfflineMessage =>
+      'Backend unavailable. Local progress reset only.';
+
+  @override
+  String get remoteResetFailedMessage =>
+      'Could not reset remote progress. Please try again.';
 
   @override
   String get cancel => 'Cancel';

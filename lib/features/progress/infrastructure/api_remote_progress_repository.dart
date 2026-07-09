@@ -40,6 +40,11 @@ class ApiRemoteProgressRepository implements RemoteProgressRepository {
     );
   }
 
+  @override
+  Future<void> resetProgress() async {
+    await _apiClient.delete('/progress', authenticated: true);
+  }
+
   RemoteProgressEntry _entryFromJson(Map<String, Object?> json) {
     return RemoteProgressEntry(
       levelId: json['levelId']?.toString() ?? '',

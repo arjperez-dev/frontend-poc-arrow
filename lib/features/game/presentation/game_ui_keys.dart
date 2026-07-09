@@ -20,6 +20,10 @@ class GameUiKeys {
   static const confirmResetProgressButton = Key(
     'confirm-reset-progress-button',
   );
+  static const resetRemoteProgressButton = Key('reset-remote-progress-button');
+  static const confirmResetRemoteProgressButton = Key(
+    'confirm-reset-remote-progress-button',
+  );
 
   static Key levelCard(int levelNumber) => Key('level-card-$levelNumber');
 }

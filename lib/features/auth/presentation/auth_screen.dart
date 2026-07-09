@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../progress/infrastructure/local_progress_dependencies.dart';
 import '../infrastructure/auth_dependencies.dart';
 import 'auth_screen_controller.dart';
 
@@ -35,6 +36,9 @@ class _AuthScreenState extends State<AuthScreen> {
     final controller = AuthScreenController(
       login: await AuthDependencies.createLoginUseCase(),
       register: await AuthDependencies.createRegisterUseCase(),
+      syncProgressOnLogin:
+          (await LocalProgressDependencies.createSyncProgressOnLoginUseCase())
+              .call,
     );
     if (!mounted) {
       controller.dispose();

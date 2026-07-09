@@ -83,20 +83,50 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   const Spacer(flex: 4),
-                  _MenuButton(
-                    label: localizations.play,
-                    accentColor: AppTheme.neonMint,
-                    filled: true,
-                    onPressed: () =>
-                        Navigator.of(context).pushNamed(AppRoutes.levels),
-                  ),
-                  const SizedBox(height: 16),
-                  _MenuButton(
-                    label: localizations.settings,
-                    accentColor: AppTheme.neonPurple,
-                    filled: false,
-                    onPressed: () =>
-                        Navigator.of(context).pushNamed(AppRoutes.settings),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _MenuNavButton(
+                          icon: Icons.grid_view_rounded,
+                          label: localizations.levels,
+                          accentColor: AppTheme.neonMint,
+                          onPressed: () => Navigator.of(
+                            context,
+                          ).pushNamed(AppRoutes.levels),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _MenuNavButton(
+                          icon: Icons.leaderboard_rounded,
+                          label: localizations.leaderboard,
+                          accentColor: AppTheme.neonBlue,
+                          onPressed: () => Navigator.of(
+                            context,
+                          ).pushNamed(AppRoutes.leaderboardLevelPicker),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _MenuNavButton(
+                          icon: Icons.settings_rounded,
+                          label: localizations.settings,
+                          accentColor: AppTheme.neonPurple,
+                          onPressed: () => Navigator.of(
+                            context,
+                          ).pushNamed(AppRoutes.settings),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _MenuNavButton(
+                          icon: Icons.view_in_ar_rounded,
+                          label: localizations.gameMode,
+                          accentColor: AppTheme.neonPink,
+                          onPressed: null,
+                        ),
+                      ),
+                    ],
                   ),
                   const Spacer(flex: 2),
                   _DebugRow(
@@ -114,31 +144,39 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-class _MenuButton extends StatefulWidget {
-  const _MenuButton({
+class _MenuNavButton extends StatefulWidget {
+  const _MenuNavButton({
+    required this.icon,
     required this.label,
     required this.accentColor,
-    required this.filled,
     required this.onPressed,
   });
 
+  final IconData icon;
   final String label;
   final Color accentColor;
-  final bool filled;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
-  State<_MenuButton> createState() => _MenuButtonState();
+  State<_MenuNavButton> createState() => _MenuNavButtonState();
 }
 
-class _MenuButtonState extends State<_MenuButton> {
+class _MenuNavButtonState extends State<_MenuNavButton> {
   bool _pressed = false;
 
-  void _setPressed(bool value) => setState(() => _pressed = value);
+  bool get _enabled => widget.onPressed != null;
+
+  void _setPressed(bool value) {
+    if (!_enabled) {
+      return;
+    }
+    setState(() => _pressed = value);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final scale = _pressed ? 0.97 : 1.0;
+    final scale = _pressed ? 0.95 : 1.0;
+    final color = _enabled ? widget.accentColor : AppTheme.mutedText;
 
     return GestureDetector(
       onTapDown: (_) => _setPressed(true),
@@ -151,34 +189,42 @@ class _MenuButtonState extends State<_MenuButton> {
         curve: Curves.easeOut,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          height: 56,
+          padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: widget.filled
-                ? widget.accentColor
-                : AppTheme.surface,
+            color: AppTheme.surface,
             borderRadius: BorderRadius.circular(18),
-            border: widget.filled
-                ? null
-                : Border.all(color: widget.accentColor, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: widget.accentColor.withValues(
-                  alpha: _pressed ? 0.18 : 0.32,
+            border: Border.all(
+              color: color.withValues(alpha: _enabled ? 1 : 0.3),
+              width: 1.5,
+            ),
+            boxShadow: _enabled
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: _pressed ? 0.15 : 0.28),
+                      blurRadius: _pressed ? 6 : 14,
+                      spreadRadius: _pressed ? 0 : 1,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(widget.icon, color: color, size: 24),
+              const SizedBox(height: 6),
+              Text(
+                widget.label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                  color: _enabled ? AppTheme.softText : AppTheme.mutedText,
                 ),
-                blurRadius: _pressed ? 8 : 18,
-                spreadRadius: _pressed ? 0 : 1,
               ),
             ],
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-              color: widget.filled ? AppTheme.background : AppTheme.softText,
-            ),
           ),
         ),
       ),

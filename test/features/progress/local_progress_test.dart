@@ -97,4 +97,14 @@ class _InMemoryLocalProgressRepository implements LocalProgressRepository {
   Future<void> resetProgress() async {
     _progress = LocalProgress.initial();
   }
+
+  @override
+  Future<String?> getLastSyncedUserId() async => _lastSyncedUserId;
+
+  @override
+  Future<void> setLastSyncedUserId(String? userId) async {
+    _lastSyncedUserId = userId;
+  }
+
+  String? _lastSyncedUserId;
 }

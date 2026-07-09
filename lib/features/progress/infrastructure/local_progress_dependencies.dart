@@ -6,7 +6,9 @@ import '../application/is_level_unlocked_use_case.dart';
 import '../application/local_progress_repository.dart';
 import '../application/notify_remote_level_completion_use_case.dart';
 import '../application/reset_local_progress_use_case.dart';
+import '../application/reset_remote_progress_use_case.dart';
 import '../application/save_level_completion_use_case.dart';
+import '../application/sync_progress_on_login_use_case.dart';
 import '../application/sync_progress_use_case.dart';
 import '../../../core/network/network_dependencies.dart';
 import '../../auth/infrastructure/auth_dependencies.dart';
@@ -47,12 +49,29 @@ class LocalProgressDependencies {
     return ResetLocalProgressUseCase(await createRepository());
   }
 
+  static Future<ResetRemoteProgressUseCase>
+  createResetRemoteProgressUseCase() async {
+    final apiClient = await NetworkDependencies.createApiClient();
+    return ResetRemoteProgressUseCase(
+      remoteProgressRepository: ApiRemoteProgressRepository(apiClient),
+      localProgressRepository: await createRepository(),
+    );
+  }
+
   static Future<SyncProgressUseCase> createSyncProgressUseCase() async {
     final apiClient = await NetworkDependencies.createApiClient();
     return SyncProgressUseCase(
       localProgressRepository: await createRepository(),
       remoteProgressRepository: ApiRemoteProgressRepository(apiClient),
       remoteLevelRepository: ApiRemoteLevelRepository(apiClient),
+    );
+  }
+
+  static Future<SyncProgressOnLoginUseCase>
+  createSyncProgressOnLoginUseCase() async {
+    return SyncProgressOnLoginUseCase(
+      localProgressRepository: await createRepository(),
+      syncProgress: await createSyncProgressUseCase(),
     );
   }
 

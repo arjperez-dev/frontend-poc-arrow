@@ -1,14 +1,18 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../core/network/api_exception.dart';
 import '../../auth/application/get_auth_session_use_case.dart';
 import '../../auth/application/logout_use_case.dart';
 import '../../auth/domain/auth_session.dart';
 import '../../progress/application/reset_local_progress_use_case.dart';
+import '../../progress/application/reset_remote_progress_use_case.dart';
 import '../application/get_player_settings_use_case.dart';
 import '../application/save_player_settings_use_case.dart';
 import '../domain/player_settings.dart';
 
 enum SettingsScreenLoadState { loading, ready, failed }
+
+enum RemoteResetResult { success, offline, unauthenticated, failed }
 
 typedef SyncProgressAction = Future<void> Function();
 
@@ -17,12 +21,14 @@ class SettingsScreenController extends ChangeNotifier {
     required GetPlayerSettingsUseCase getPlayerSettings,
     required SavePlayerSettingsUseCase savePlayerSettings,
     required ResetLocalProgressUseCase resetLocalProgress,
+    ResetRemoteProgressUseCase? resetRemoteProgress,
     GetAuthSessionUseCase? getAuthSession,
     LogoutUseCase? logout,
     SyncProgressAction? syncProgress,
   }) : _getPlayerSettings = getPlayerSettings,
        _savePlayerSettings = savePlayerSettings,
        _resetLocalProgress = resetLocalProgress,
+       _resetRemoteProgress = resetRemoteProgress,
        _getAuthSession = getAuthSession,
        _logout = logout,
        _syncProgress = syncProgress;
@@ -30,6 +36,7 @@ class SettingsScreenController extends ChangeNotifier {
   final GetPlayerSettingsUseCase _getPlayerSettings;
   final SavePlayerSettingsUseCase _savePlayerSettings;
   final ResetLocalProgressUseCase _resetLocalProgress;
+  final ResetRemoteProgressUseCase? _resetRemoteProgress;
   final GetAuthSessionUseCase? _getAuthSession;
   final LogoutUseCase? _logout;
   final SyncProgressAction? _syncProgress;
@@ -39,6 +46,7 @@ class SettingsScreenController extends ChangeNotifier {
   AuthSession? _authSession;
   bool _syncing = false;
   String? _syncMessage;
+  bool _resettingRemote = false;
 
   SettingsScreenLoadState get loadState => _loadState;
   PlayerSettings get settings => _settings;
@@ -46,6 +54,8 @@ class SettingsScreenController extends ChangeNotifier {
   bool get isLoggedIn => _authSession != null;
   bool get syncing => _syncing;
   String? get syncMessage => _syncMessage;
+  bool get resettingRemote => _resettingRemote;
+  bool get canResetRemoteProgress => _resetRemoteProgress != null && isLoggedIn;
 
   Future<void> load() async {
     _loadState = SettingsScreenLoadState.loading;
@@ -81,6 +91,36 @@ class SettingsScreenController extends ChangeNotifier {
 
   Future<void> resetProgress() {
     return _resetLocalProgress();
+  }
+
+  Future<RemoteResetResult> resetRemoteProgress() async {
+    if (!isLoggedIn) {
+      return RemoteResetResult.unauthenticated;
+    }
+    final resetRemoteProgress = _resetRemoteProgress;
+    if (resetRemoteProgress == null) {
+      return RemoteResetResult.unauthenticated;
+    }
+    _resettingRemote = true;
+    notifyListeners();
+    try {
+      await resetRemoteProgress();
+      return RemoteResetResult.success;
+    } on ApiException catch (error) {
+      if (error.statusCode == 401) {
+        return RemoteResetResult.unauthenticated;
+      }
+      if (error.statusCode == null) {
+        await _resetLocalProgress();
+        return RemoteResetResult.offline;
+      }
+      return RemoteResetResult.failed;
+    } catch (_) {
+      return RemoteResetResult.failed;
+    } finally {
+      _resettingRemote = false;
+      notifyListeners();
+    }
   }
 
   Future<void> refreshAuthSession() async {

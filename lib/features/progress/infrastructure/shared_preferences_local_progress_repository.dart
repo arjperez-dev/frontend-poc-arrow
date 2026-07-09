@@ -13,6 +13,7 @@ class SharedPreferencesLocalProgressRepository
   static const _completedLevelsKey = 'progress.completedLevelNumbers';
   static const _bestResultsKey = 'progress.bestResultsByLevel';
   static const _lastUnlockedLevelKey = 'progress.lastUnlockedLevel';
+  static const _lastSyncedUserIdKey = 'progress.lastSyncedUserId';
 
   final SharedPreferences _preferences;
 
@@ -62,6 +63,20 @@ class SharedPreferencesLocalProgressRepository
     await _preferences.remove(_completedLevelsKey);
     await _preferences.remove(_bestResultsKey);
     await _preferences.remove(_lastUnlockedLevelKey);
+  }
+
+  @override
+  Future<String?> getLastSyncedUserId() async {
+    return _preferences.getString(_lastSyncedUserIdKey);
+  }
+
+  @override
+  Future<void> setLastSyncedUserId(String? userId) async {
+    if (userId == null) {
+      await _preferences.remove(_lastSyncedUserIdKey);
+      return;
+    }
+    await _preferences.setString(_lastSyncedUserIdKey, userId);
   }
 
   Map<int, LevelBestResult> _readBestResults() {

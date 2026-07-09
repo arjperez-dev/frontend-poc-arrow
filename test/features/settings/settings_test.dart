@@ -7,11 +7,15 @@ import 'package:frontend_poc_arrow/features/auth/application/logout_use_case.dar
 import 'package:frontend_poc_arrow/features/auth/application/token_storage.dart';
 import 'package:frontend_poc_arrow/features/auth/domain/auth_session.dart';
 import 'package:frontend_poc_arrow/features/auth/domain/authenticated_user.dart';
+import 'package:frontend_poc_arrow/core/network/api_exception.dart';
 import 'package:frontend_poc_arrow/features/game/presentation/game_ui_keys.dart';
 import 'package:frontend_poc_arrow/features/progress/application/local_progress_repository.dart';
+import 'package:frontend_poc_arrow/features/progress/application/remote_progress_repository.dart';
 import 'package:frontend_poc_arrow/features/progress/application/reset_local_progress_use_case.dart';
+import 'package:frontend_poc_arrow/features/progress/application/reset_remote_progress_use_case.dart';
 import 'package:frontend_poc_arrow/features/progress/application/save_level_completion_use_case.dart';
 import 'package:frontend_poc_arrow/features/progress/domain/local_progress.dart';
+import 'package:frontend_poc_arrow/features/progress/domain/remote_progress_entry.dart';
 import 'package:frontend_poc_arrow/features/progress/infrastructure/shared_preferences_local_progress_repository.dart';
 import 'package:frontend_poc_arrow/features/settings/application/get_player_settings_use_case.dart';
 import 'package:frontend_poc_arrow/features/settings/application/save_player_settings_use_case.dart';
@@ -152,6 +156,169 @@ void main() {
     controller.dispose();
   });
 
+  test('should_reset_remote_and_local_progress_when_remote_succeeds', () async {
+    final localProgressRepository = _FakeLocalProgressRepository();
+    final remoteProgressRepository = _FakeRemoteProgressRepository();
+    final controller = SettingsScreenController(
+      getPlayerSettings: GetPlayerSettingsUseCase(
+        _FakeSettingsRepository(PlayerSettings.defaults()),
+      ),
+      savePlayerSettings: SavePlayerSettingsUseCase(
+        _FakeSettingsRepository(PlayerSettings.defaults()),
+      ),
+      resetLocalProgress: ResetLocalProgressUseCase(localProgressRepository),
+      resetRemoteProgress: ResetRemoteProgressUseCase(
+        remoteProgressRepository: remoteProgressRepository,
+        localProgressRepository: localProgressRepository,
+      ),
+      getAuthSession: GetAuthSessionUseCase(_FakeTokenStorage()),
+    );
+
+    await controller.load();
+    final result = await controller.resetRemoteProgress();
+
+    expect(result, RemoteResetResult.success);
+    expect(remoteProgressRepository.resetCount, 1);
+    expect(localProgressRepository.resetCount, 1);
+
+    controller.dispose();
+  });
+
+  test(
+    'should_clear_local_progress_only_when_backend_is_unreachable',
+    () async {
+      final localProgressRepository = _FakeLocalProgressRepository();
+      final remoteProgressRepository = _FakeRemoteProgressRepository(
+        error: const ApiException(message: 'Network request failed: offline'),
+      );
+      final controller = SettingsScreenController(
+        getPlayerSettings: GetPlayerSettingsUseCase(
+          _FakeSettingsRepository(PlayerSettings.defaults()),
+        ),
+        savePlayerSettings: SavePlayerSettingsUseCase(
+          _FakeSettingsRepository(PlayerSettings.defaults()),
+        ),
+        resetLocalProgress: ResetLocalProgressUseCase(
+          localProgressRepository,
+        ),
+        resetRemoteProgress: ResetRemoteProgressUseCase(
+          remoteProgressRepository: remoteProgressRepository,
+          localProgressRepository: localProgressRepository,
+        ),
+        getAuthSession: GetAuthSessionUseCase(_FakeTokenStorage()),
+      );
+
+      await controller.load();
+      final result = await controller.resetRemoteProgress();
+
+      expect(result, RemoteResetResult.offline);
+      expect(localProgressRepository.resetCount, 1);
+
+      controller.dispose();
+    },
+  );
+
+  test(
+    'should_report_unauthenticated_without_clearing_local_progress_on_401',
+    () async {
+      final localProgressRepository = _FakeLocalProgressRepository();
+      final remoteProgressRepository = _FakeRemoteProgressRepository(
+        error: const ApiException(message: 'Unauthorized', statusCode: 401),
+      );
+      final controller = SettingsScreenController(
+        getPlayerSettings: GetPlayerSettingsUseCase(
+          _FakeSettingsRepository(PlayerSettings.defaults()),
+        ),
+        savePlayerSettings: SavePlayerSettingsUseCase(
+          _FakeSettingsRepository(PlayerSettings.defaults()),
+        ),
+        resetLocalProgress: ResetLocalProgressUseCase(
+          localProgressRepository,
+        ),
+        resetRemoteProgress: ResetRemoteProgressUseCase(
+          remoteProgressRepository: remoteProgressRepository,
+          localProgressRepository: localProgressRepository,
+        ),
+        getAuthSession: GetAuthSessionUseCase(_FakeTokenStorage()),
+      );
+
+      await controller.load();
+      final result = await controller.resetRemoteProgress();
+
+      expect(result, RemoteResetResult.unauthenticated);
+      expect(localProgressRepository.resetCount, 0);
+
+      controller.dispose();
+    },
+  );
+
+  test(
+    'should_report_unauthenticated_and_disable_action_when_logged_out',
+    () async {
+      final localProgressRepository = _FakeLocalProgressRepository();
+      final remoteProgressRepository = _FakeRemoteProgressRepository();
+      final controller = SettingsScreenController(
+        getPlayerSettings: GetPlayerSettingsUseCase(
+          _FakeSettingsRepository(PlayerSettings.defaults()),
+        ),
+        savePlayerSettings: SavePlayerSettingsUseCase(
+          _FakeSettingsRepository(PlayerSettings.defaults()),
+        ),
+        resetLocalProgress: ResetLocalProgressUseCase(
+          localProgressRepository,
+        ),
+        resetRemoteProgress: ResetRemoteProgressUseCase(
+          remoteProgressRepository: remoteProgressRepository,
+          localProgressRepository: localProgressRepository,
+        ),
+      );
+
+      await controller.load();
+      expect(controller.canResetRemoteProgress, isFalse);
+      final result = await controller.resetRemoteProgress();
+
+      expect(result, RemoteResetResult.unauthenticated);
+      expect(remoteProgressRepository.resetCount, 0);
+      expect(localProgressRepository.resetCount, 0);
+
+      controller.dispose();
+    },
+  );
+
+  test(
+    'should_report_generic_failure_without_clearing_local_progress',
+    () async {
+      final localProgressRepository = _FakeLocalProgressRepository();
+      final remoteProgressRepository = _FakeRemoteProgressRepository(
+        error: const ApiException(message: 'Server error', statusCode: 500),
+      );
+      final controller = SettingsScreenController(
+        getPlayerSettings: GetPlayerSettingsUseCase(
+          _FakeSettingsRepository(PlayerSettings.defaults()),
+        ),
+        savePlayerSettings: SavePlayerSettingsUseCase(
+          _FakeSettingsRepository(PlayerSettings.defaults()),
+        ),
+        resetLocalProgress: ResetLocalProgressUseCase(
+          localProgressRepository,
+        ),
+        resetRemoteProgress: ResetRemoteProgressUseCase(
+          remoteProgressRepository: remoteProgressRepository,
+          localProgressRepository: localProgressRepository,
+        ),
+        getAuthSession: GetAuthSessionUseCase(_FakeTokenStorage()),
+      );
+
+      await controller.load();
+      final result = await controller.resetRemoteProgress();
+
+      expect(result, RemoteResetResult.failed);
+      expect(localProgressRepository.resetCount, 0);
+
+      controller.dispose();
+    },
+  );
+
   test('should_persist_language_when_changed', () async {
     final settingsRepository = _FakeSettingsRepository(
       const PlayerSettings(soundEnabled: true, musicEnabled: false),
@@ -216,6 +383,40 @@ class _FakeLocalProgressRepository implements LocalProgressRepository {
 
   @override
   Future<void> saveProgress(LocalProgress progress) async {}
+
+  @override
+  Future<String?> getLastSyncedUserId() async => null;
+
+  @override
+  Future<void> setLastSyncedUserId(String? userId) async {}
+}
+
+class _FakeRemoteProgressRepository implements RemoteProgressRepository {
+  _FakeRemoteProgressRepository({this.error});
+
+  final Object? error;
+  int resetCount = 0;
+
+  @override
+  Future<List<RemoteProgressEntry>> getMyProgress() async => const [];
+
+  @override
+  Future<void> syncProgress({
+    required String levelId,
+    required bool completed,
+    required int? bestScore,
+    required int? bestMoves,
+    required int? bestTimeSeconds,
+  }) async {}
+
+  @override
+  Future<void> resetProgress() async {
+    final error = this.error;
+    if (error != null) {
+      throw error;
+    }
+    resetCount += 1;
+  }
 }
 
 class _FakeSettingsRepository implements SettingsRepository {

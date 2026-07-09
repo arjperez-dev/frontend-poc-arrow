@@ -1329,3 +1329,293 @@ Manual on-device validation pass covering the still-pending Phases
 15/15.1/17/18/19/20 items together (audio, board rendering, dense-level tap
 accuracy, pinch-to-zoom, and the new animated main menu) — then the
 long-pending backend/emulator smoke test for Phases 9–14.1.
+
+## Phase 21 — Backend Progress Reset
+
+### What Changed
+
+- Backend: added an authenticated `DELETE /progress` endpoint (204 No
+  Content, `JwtAuthGuard`, 401 if unauthenticated) that clears every progress
+  row for the calling user. New `ResetProgressUseCase` calls a new
+  `ProgressRepository.deleteByUserId`, implemented in
+  `PrismaProgressRepository` via `prisma.playerProgress.deleteMany`.
+- Frontend network layer: `ApiClient`/`HttpApiClient` gained a `delete()`
+  method (mirrors `get`/`post`/`put`, same auth-header/error-decoding path).
+- Frontend progress feature: `RemoteProgressRepository` gained
+  `resetProgress()`; `ApiRemoteProgressRepository` implements it via
+  `_apiClient.delete('/progress', authenticated: true)`. New
+  `ResetRemoteProgressUseCase` (application layer) calls the remote reset
+  first, then the existing `LocalProgressRepository.resetProgress()` — so a
+  thrown exception from the remote call leaves local progress untouched with
+  no extra guard needed.
+- Settings presentation: `SettingsScreenController.resetRemoteProgress()`
+  returns a `RemoteResetResult` enum (`success` / `offline` /
+  `unauthenticated` / `failed`), distinguishing an `ApiException` with
+  `statusCode == null` (network-level failure — offline; also clears local
+  progress as a fallback) from `statusCode == 401` (not authenticated — local
+  progress is *not* cleared) from any other status (generic failure — local
+  progress is *not* cleared). `SettingsScreen` renders a new "Reset remote
+  progress" card (same `Card`/padding/typography as the existing controls),
+  with its own confirm dialog and a result-specific snackbar; when logged
+  out, the card is replaced with a "Log in to reset remote progress." message
+  instead of a disabled button.
+- Localization: added `resetRemoteProgress`, `resetRemoteProgressConfirmation`,
+  `remoteProgressReset`, `resetRemoteProgressLoginRequired`,
+  `remoteResetOfflineMessage`, `remoteResetFailedMessage` to both
+  `app_en.arb`/`app_es.arb`; regenerated `app_localizations*.dart` via
+  `flutter gen-l10n`.
+
+### Files Touched
+
+Frontend (`frontend-poc-arrow`):
+- `lib/core/network/api_client.dart`
+- `lib/core/network/http_api_client.dart`
+- `lib/features/progress/application/remote_progress_repository.dart`
+- `lib/features/progress/application/reset_remote_progress_use_case.dart` (new)
+- `lib/features/progress/infrastructure/api_remote_progress_repository.dart`
+- `lib/features/progress/infrastructure/local_progress_dependencies.dart`
+- `lib/features/settings/presentation/settings_screen_controller.dart`
+- `lib/features/settings/presentation/settings_screen.dart`
+- `lib/features/game/presentation/game_ui_keys.dart`
+- `lib/core/localization/l10n/app_en.arb`, `app_es.arb`,
+  `app_localizations.dart`, `app_localizations_en.dart`,
+  `app_localizations_es.dart`
+- `test/features/auth/auth_integration_test.dart` (fake `ApiClient` needed
+  the new `delete` method)
+- `test/features/settings/settings_test.dart` (5 new tests)
+
+Backend (`backend-poc-arrow`):
+- `src/application/ports/progress.repository.ts`
+- `src/application/progress/reset-progress.use-case.ts` (new)
+- `src/infrastructure/repositories/prisma-progress.repository.ts`
+- `src/interfaces/http/progress/progress.controller.ts`
+- `src/modules/progress.module.ts`
+- `test/api-core.e2e-spec.ts` (in-memory fake needed `deleteByUserId`; 2 new
+  e2e tests)
+
+### Backend Endpoint
+
+`DELETE /progress` — authenticated (`JwtAuthGuard`, same as the other
+`/progress` routes) — clears all `PlayerProgress` rows for
+`request.user.id`. Returns `204 No Content` on success, `401` if
+unauthenticated. This endpoint did not previously exist; it was newly
+implemented (only `POST /progress/sync` and `GET /progress/me` existed
+before this phase).
+
+### Verification Results
+
+- `flutter analyze`: passed with no issues.
+- `flutter test`: 129/129 passed (124 pre-existing + 5 new).
+- `node tool/gen_levels.js --validate-only`: ALL VALID: true (no level files
+  touched).
+- Backend `tsc --noEmit`: clean.
+- Backend `npm run test:e2e`: 10/10 passed (8 pre-existing + 2 new).
+- Backend `npm test`: 9/9 passed (unaffected).
+
+### New Tests
+
+- `should_reset_remote_and_local_progress_when_remote_succeeds`
+- `should_clear_local_progress_only_when_backend_is_unreachable`
+- `should_report_unauthenticated_without_clearing_local_progress_on_401`
+- `should_report_unauthenticated_and_disable_action_when_logged_out`
+- `should_report_generic_failure_without_clearing_local_progress`
+- `should_delete_progress_when_user_is_authenticated` (backend e2e)
+- `should_reject_progress_reset_when_unauthenticated` (backend e2e)
+
+### Limitations
+
+- Manual on-device/live-backend verification of the four UI paths (button
+  render, live reset, offline snackbar, 401 message) was not performed in
+  this pass — covered by unit tests against fakes only.
+- Still stacked on the same still-pending manual on-device validation queue
+  as Phases 9–20.
+
+### Next Recommended Phase
+
+Manual on-device/emulator validation pass — ideally combined with the
+already-queued Phase 9–20 manual checklist — including this phase's live
+backend up/down and login/logout reset-button behavior.
+
+## Phase 21.1 — Main Menu Bottom Navigation & Login Progress Sync (2026-07-09)
+
+Extends Phase 21, same branch (`feat/phase-21-backend-progress-reset`),
+uncommitted. Two independent tasks, both frontend-only; no backend changes
+needed.
+
+### What Changed
+
+**Task A — Login progress sync:**
+- `LocalProgressRepository` gained `getLastSyncedUserId()` /
+  `setLastSyncedUserId(String?)`, backed by a new
+  `progress.lastSyncedUserId` SharedPreferences key.
+- New `SyncProgressOnLoginUseCase` (application layer): if the stored
+  last-synced user id is non-null and differs from the newly logged-in
+  user's id, local progress is cleared before syncing (prevents user A's
+  local unlocks leaking into user B's account on a shared device); if it
+  matches or is null (anonymous/guest session), the existing
+  `SyncProgressUseCase`/`MergeProgressUseCase` merge policy runs
+  unchanged, preserving the "guest progress merges into new account" path.
+- `LocalProgressDependencies.createSyncProgressOnLoginUseCase()` wires it
+  through the existing DI factory pattern.
+- `AuthScreenController` takes an optional `syncProgressOnLogin` callback,
+  invoked with `session.user.id` after a successful login/register,
+  wrapped in try/catch so a sync failure never blocks login (matches the
+  existing non-fatal settings-screen sync UX).
+- `AuthScreen._createController()` injects it via
+  `LocalProgressDependencies.createSyncProgressOnLoginUseCase()`.
+
+**Task B — Main menu bottom navigation:**
+- `HomeScreen`'s two stacked Play/Settings buttons replaced with a 4-item
+  bottom row (new `_MenuNavButton`, icon + label, same neon glow styling
+  as the removed `_MenuButton`): Levels, Leaderboard (pushes with no level
+  argument → global board), Settings, and a disabled "Game Mode"
+  placeholder (`onPressed: null`, reserved for a future 3D mode).
+- Nodus wordmark, animated `_MenuBackgroundPainter` background, and the
+  de-emphasized backend-URL `_DebugRow` all kept in their Phase 20
+  positions.
+- Only `gameMode` was a genuinely new localization key — `levels`,
+  `leaderboard`, `play`, `settings` already existed. Added to both
+  `app_en.arb`/`app_es.arb`, regenerated via `flutter gen-l10n`.
+
+### Files Touched
+
+- `lib/features/progress/application/local_progress_repository.dart`
+- `lib/features/progress/application/sync_progress_on_login_use_case.dart` (new)
+- `lib/features/progress/infrastructure/shared_preferences_local_progress_repository.dart`
+- `lib/features/progress/infrastructure/local_progress_dependencies.dart`
+- `lib/features/auth/presentation/auth_screen_controller.dart`
+- `lib/features/auth/presentation/auth_screen.dart`
+- `lib/features/home/presentation/home_screen.dart`
+- `lib/core/localization/l10n/app_en.arb`, `app_es.arb`
+- `test/widget_test.dart` (updated for new bottom-nav labels)
+- `test/features/settings/settings_test.dart`,
+  `test/features/progress/local_progress_test.dart` (fake repositories
+  needed the 2 new interface methods)
+
+### Verification Results
+
+- `flutter analyze`: passed with no issues.
+- `flutter test`: 129/129 passed (no net change in count — 2 tests updated
+  for new UI, no new dedicated tests added; see Limitations).
+- `node tool/gen_levels.js --validate-only`: ALL VALID: true (no level
+  files touched).
+
+### Backend Changes Required
+
+None. Task A is achieved entirely with the existing `GET /progress/me` +
+local/remote merge machinery; no new/changed endpoint, response shape, or
+auth behavior was needed.
+
+### Limitations
+
+- No dedicated automated test was added for the login-identity-switch
+  logic (`SyncProgressOnLoginUseCase`'s clear-before-sync branch) or for
+  `AuthScreenController`'s new sync-on-login wiring — `AuthScreenController`
+  has no existing test file to extend. This is a coverage gap, not a
+  known defect; flagged for a follow-up phase rather than added here to
+  stay within this phase's stated scope.
+- Manual on-device validation of both tasks — 4-item bottom nav layout,
+  user-A/user-B login-switch progress isolation, and offline-login
+  graceful degradation — was not performed in this pass; stacked on the
+  same pending manual-validation queue as Phases 9–21.
+
+### Next Recommended Phase (superseded — see Phase 21.2 below for the
+identity-switch test coverage that was originally deferred here)
+
+## Phase 21.2 — Leaderboard Display Fix & Progress Save Regression Coverage (2026-07-09)
+
+Extends Phase 21/21.1, same branch (`feat/phase-21-backend-progress-reset`),
+uncommitted. Two independent tasks; no backend changes needed for either.
+
+### Task A — Root Cause & Fix
+
+**Symptom:** tapping "Leaderboard" from the main menu opened the leaderboard
+screen but it always rendered empty.
+
+**Root cause:** the Phase 21.1 main-menu button pushed `AppRoutes.leaderboard`
+with **no argument**, so `LeaderboardScreen.levelNumber` was `null`.
+`LeaderboardScreen._loadEntries()` hard-returns `const <LeaderboardEntry>[]`
+whenever `levelNumber == null`, so the fetch never even reached the API. The
+backend only exposes `GET /leaderboard/:levelId` — there is no
+global/all-levels endpoint — so a true aggregate leaderboard is not
+achievable without a backend change.
+
+**Fix (frontend-only):** new `LeaderboardLevelPickerScreen`
+(`lib/features/leaderboard/presentation/leaderboard_level_picker_screen.dart`,
+route `AppRoutes.leaderboardLevelPicker`) lists all levels (via the existing
+`LocalLevelDependencies.createGetLocalLevelsUseCase()`) and navigates to the
+existing, unmodified `LeaderboardScreen(levelNumber: n)` on tap. `HomeScreen`'s
+Leaderboard button now pushes the picker route instead of `AppRoutes.leaderboard`
+directly. `LeaderboardScreen`, `GetLeaderboardUseCase`, `ApiLeaderboardRepository`
+were audited and are unchanged — they already worked correctly once given a
+valid level number.
+
+### Task B — Root Cause & Verification
+
+**Symptom (as reported):** completing a level and backing out (instead of
+tapping "Next Level") does not save progress.
+
+**Root cause: did not reproduce.** `GameScreenController.activateArrow`
+already calls `unawaited(_saveCompletionOnce(result.session))` synchronously
+on the `GameStatus.victory` transition, guarded by the existing
+`_completionSaved` flag for idempotency — independent of the "Next Level"
+button, which only navigates (`_openNextLevel` in `game_screen.dart`
+performs no save of its own). The save is a fire-and-forget
+`SharedPreferences` write not tied to widget lifecycle, so it completes even
+if the screen is popped immediately after. No production code was changed
+for Task B.
+
+**Delivered instead: regression test coverage** proving the above holds, so
+a future regression is caught automatically:
+- `should_save_completion_on_victory_before_next_level_is_tapped` — save and
+  remote-notify both fire exactly once on the victory transition itself,
+  before any victory-overlay button is ever tapped.
+- `should_not_duplicate_completion_save_when_victory_overlay_is_tapped_repeatedly`
+  — tapping "Retry" on the victory overlay does not re-trigger the save.
+- `should_persist_completion_save_when_player_backs_out_immediately_after_victory`
+  — the save is already recorded before the player backs out via the
+  app-bar back button, without ever tapping "Next Level"; level-selection
+  reflects it on return.
+
+### Files Touched
+
+- `lib/features/leaderboard/presentation/leaderboard_level_picker_screen.dart` (new)
+- `lib/core/routing/app_routes.dart`
+- `lib/features/home/presentation/home_screen.dart`
+- `test/features/game/presentation/playable_game_ui_test.dart` (3 new tests;
+  `_TestGameApp`/`_TestManualLevelsApp` test harnesses extended with
+  injectable `saveLevelCompletion`/`onSaveLevelCompletion` and a
+  `level1Override` for deterministic single-tap victories)
+
+### Verification Results
+
+- `flutter analyze`: passed with no issues.
+- `flutter test`: 132/132 passed (129 + 3 new).
+- `node tool/gen_levels.js --validate-only`: not run — no level files touched.
+
+### Backend Changes Required
+
+None. Task A is solved entirely with a frontend navigation change (level
+picker) using the existing per-level `GET /leaderboard/:levelId` endpoint. A
+true global/aggregate leaderboard across all levels would require a new
+backend endpoint (e.g. `GET /leaderboard` returning top scores across all
+levels) — this was **not** implemented; if a genuine global board is wanted
+later, that's the endpoint contract to design and build on a dedicated
+backend branch.
+
+### Limitations
+
+- `LeaderboardLevelPickerScreen` has no dedicated widget test of its own
+  (only exercised transitively — none of this session's changes to it are
+  covered by a targeted test asserting the level list renders and tapping
+  navigates correctly). Flagged as a coverage gap for a follow-up phase.
+- Manual on-device validation of the leaderboard picker flow and the
+  login-identity-switch coverage flagged in Phase 21.1 remain pending,
+  stacked on the same manual-validation queue open since Phase 9.
+
+### Next Recommended Phase
+
+Add a dedicated widget test for `LeaderboardLevelPickerScreen`, then add the
+`AuthScreenController`/`SyncProgressOnLoginUseCase` unit test coverage
+deferred from Phase 21.1, then perform the combined manual on-device
+validation pass.

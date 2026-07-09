@@ -21,6 +21,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get levels => 'Niveles';
 
   @override
+  String get gameMode => 'Modo de juego';
+
+  @override
   String get gamePlaceholder => 'Pantalla de juego provisional';
 
   @override
@@ -108,6 +111,28 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get progressReset => 'Progreso local reiniciado.';
+
+  @override
+  String get resetRemoteProgress => 'Reiniciar progreso remoto';
+
+  @override
+  String get resetRemoteProgressConfirmation =>
+      'Esto borra tu progreso guardado en el servidor y tambien reinicia el progreso local. La configuracion no cambia.';
+
+  @override
+  String get remoteProgressReset => 'Progreso remoto y local reiniciado.';
+
+  @override
+  String get resetRemoteProgressLoginRequired =>
+      'Inicia sesion para reiniciar el progreso remoto.';
+
+  @override
+  String get remoteResetOfflineMessage =>
+      'Backend no disponible. Solo se reinicio el progreso local.';
+
+  @override
+  String get remoteResetFailedMessage =>
+      'No se pudo reiniciar el progreso remoto. Intentalo de nuevo.';
 
   @override
   String get cancel => 'Cancelar';

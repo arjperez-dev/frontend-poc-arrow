@@ -226,6 +226,124 @@ void main() {
     expect(find.textContaining('Unlocked'), findsWidgets);
   });
 
+  testWidgets(
+    'should_save_completion_on_victory_before_next_level_is_tapped',
+    (tester) async {
+      var saveCalls = 0;
+      var remoteCalls = 0;
+
+      await tester.pumpWidget(
+        _TestGameApp(
+          level: _singleNodeExitLevel(),
+          saveLevelCompletion:
+              ({
+                required int levelNumber,
+                required int score,
+                required int moves,
+                required int timeSeconds,
+              }) async {
+                saveCalls++;
+              },
+          notifyRemoteLevelCompletion:
+              ({
+                required int levelNumber,
+                required int score,
+                required int moves,
+                required int timeSeconds,
+              }) async {
+                remoteCalls++;
+              },
+        ),
+      );
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.gameBoard));
+
+      await tester.tapAt(_singleNodePosition(tester));
+      await tester.pump();
+
+      // Save and remote notification both fire on the victory transition
+      // itself — before any victory-overlay button (e.g. "Next Level") is
+      // ever tapped.
+      expect(find.byKey(GameUiKeys.victoryCard), findsOneWidget);
+      expect(saveCalls, 1);
+      expect(remoteCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'should_not_duplicate_completion_save_when_victory_overlay_is_tapped_repeatedly',
+    (tester) async {
+      var saveCalls = 0;
+
+      await tester.pumpWidget(
+        _TestGameApp(
+          level: _singleNodeExitLevel(),
+          saveLevelCompletion:
+              ({
+                required int levelNumber,
+                required int score,
+                required int moves,
+                required int timeSeconds,
+              }) async {
+                saveCalls++;
+              },
+        ),
+      );
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.gameBoard));
+
+      await tester.tapAt(_singleNodePosition(tester));
+      await tester.pump();
+      expect(find.byKey(GameUiKeys.victoryCard), findsOneWidget);
+      expect(saveCalls, 1);
+
+      // Tapping "Retry" on the victory overlay restarts the session locally;
+      // it must not re-trigger the completion save for the same victory.
+      await tester.tap(find.byKey(GameUiKeys.retryButton));
+      await tester.pump();
+
+      expect(saveCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'should_persist_completion_save_when_player_backs_out_immediately_after_victory',
+    (tester) async {
+      var saveCalls = 0;
+
+      final levels = await _loadRealManualLevels(tester);
+      await tester.pumpWidget(
+        _TestManualLevelsApp(
+          levels: levels,
+          level1Override: _singleNodeExitLevel(),
+          onSaveLevelCompletion:
+              ({
+                required int levelNumber,
+                required int score,
+                required int moves,
+                required int timeSeconds,
+              }) async {
+                saveCalls++;
+              },
+        ),
+      );
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.levelCard(1)));
+
+      await tester.tap(find.byKey(GameUiKeys.levelCard(1)));
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.gameBoard));
+
+      await tester.tapAt(_singleNodePosition(tester));
+      await tester.pump();
+      expect(find.byKey(GameUiKeys.victoryCard), findsOneWidget);
+
+      // Player backs out via the app-bar back button immediately after
+      // victory, without tapping "Next Level" — the save already happened
+      // on the victory transition, so it must have been recorded.
+      await tester.pageBack();
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.levelCard(1)));
+
+      expect(saveCalls, 1);
+    },
+  );
+
   testWidgets('should_refresh_progress_when_returning_from_game', (
     tester,
   ) async {
@@ -376,10 +494,15 @@ Level _blockedArrowLevel() {
 // ---------------------------------------------------------------------------
 
 class _TestGameApp extends StatelessWidget {
-  const _TestGameApp({required this.level, this.notifyRemoteLevelCompletion});
+  const _TestGameApp({
+    required this.level,
+    this.notifyRemoteLevelCompletion,
+    this.saveLevelCompletion,
+  });
 
   final Level level;
   final NotifyRemoteLevelCompletion? notifyRemoteLevelCompletion;
+  final SaveLevelCompletion? saveLevelCompletion;
 
   @override
   Widget build(BuildContext context) {
@@ -392,6 +515,7 @@ class _TestGameApp extends StatelessWidget {
         enableBoardAnimations: false,
         loadLevelByNumber: (_) async => level,
         saveLevelCompletion:
+            saveLevelCompletion ??
             ({
               required int levelNumber,
               required int score,
@@ -418,11 +542,19 @@ class _TestManualLevelsApp extends StatelessWidget {
     required this.levels,
     this.progress,
     this.loadProgress,
+    this.level1Override,
+    this.onSaveLevelCompletion,
   });
 
   final List<Level> levels;
   final LocalProgress? progress;
   final Future<LocalProgress> Function()? loadProgress;
+
+  /// When set, substitutes the level served for level number 1 — lets tests
+  /// drive a fast, deterministic victory without depending on real level 1
+  /// puzzle contents.
+  final Level? level1Override;
+  final SaveLevelCompletion? onSaveLevelCompletion;
 
   @override
   Widget build(BuildContext context) {
@@ -447,6 +579,9 @@ class _TestManualLevelsApp extends StatelessWidget {
               levelNumber: levelNumber,
               enableBoardAnimations: false,
               loadLevelByNumber: (number) async {
+                if (level1Override != null && number == 1) {
+                  return level1Override;
+                }
                 for (final level in levels) {
                   if (level.number == number) {
                     return level;
@@ -455,6 +590,7 @@ class _TestManualLevelsApp extends StatelessWidget {
                 return null;
               },
               saveLevelCompletion:
+                  onSaveLevelCompletion ??
                   ({
                     required int levelNumber,
                     required int score,
