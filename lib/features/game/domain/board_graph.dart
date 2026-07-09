@@ -1,7 +1,7 @@
 import 'board_coordinate.dart';
-import 'direction.dart';
 import 'graph_edge.dart';
 import 'graph_node.dart';
+import 'move_direction.dart';
 
 class BoardGraph {
   BoardGraph({
@@ -25,7 +25,7 @@ class BoardGraph {
 
   GraphEdge? edgeById(String id) => _edgesById[id];
 
-  GraphNode? getNeighbor(String nodeId, Direction direction) {
+  GraphNode? getNeighbor(String nodeId, MoveDirection direction) {
     final node = _nodesById[nodeId];
     if (node == null) {
       return null;
@@ -38,7 +38,7 @@ class BoardGraph {
         continue;
       }
 
-      final edgeDirection = Direction.between(node.coordinate, otherNode.coordinate);
+      final edgeDirection = MoveDirection.between(node.coordinate, otherNode.coordinate);
       if (edgeDirection == direction) {
         return otherNode;
       }
@@ -47,7 +47,7 @@ class BoardGraph {
     return null;
   }
 
-  GraphEdge? getEdgeInDirection(String nodeId, Direction direction) {
+  GraphEdge? getEdgeInDirection(String nodeId, MoveDirection direction) {
     final neighbor = getNeighbor(nodeId, direction);
     if (neighbor == null) {
       return null;
@@ -70,7 +70,33 @@ class BoardGraph {
 
   bool isEdgeBlocked(String edgeId) => _edgesById[edgeId]?.isBlocked ?? false;
 
-  bool isExitMove(String nodeId, Direction direction) {
+  bool isExitMove(String nodeId, MoveDirection direction) {
     return _nodesById.containsKey(nodeId) && getNeighbor(nodeId, direction) == null;
+  }
+
+  /// Distinct z-coordinates present in this graph, ascending. A purely 2D
+  /// graph has exactly one layer (`[0]`).
+  List<int> get layers {
+    final zs = _nodesById.values.map((node) => node.coordinate.z).toSet().toList()
+      ..sort();
+    return zs;
+  }
+
+  bool get isMultiLayer => layers.length > 1;
+
+  /// The nodes at [z] and the edges whose endpoints are both at [z]. Lets a
+  /// 2D-only renderer draw one layer of a 3D level without knowing about the
+  /// other layers.
+  BoardGraph layerSubgraph(int z) {
+    final layerNodes =
+        _nodesById.values.where((node) => node.coordinate.z == z).toList(growable: false);
+    final layerNodeIds = layerNodes.map((node) => node.id).toSet();
+    final layerEdges = _edgesById.values
+        .where(
+          (edge) =>
+              layerNodeIds.contains(edge.fromNodeId) && layerNodeIds.contains(edge.toNodeId),
+        )
+        .toList(growable: false);
+    return BoardGraph(nodes: layerNodes, edges: layerEdges);
   }
 }

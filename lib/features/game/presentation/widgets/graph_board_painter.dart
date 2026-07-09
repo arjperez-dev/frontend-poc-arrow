@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/arrow_path.dart';
-import '../../domain/direction.dart';
 import '../../domain/game_session.dart';
+import '../../domain/move_direction.dart';
 import 'graph_board_layout.dart';
 
 class GraphBoardPainter extends CustomPainter {
@@ -298,21 +298,18 @@ class GraphBoardPainter extends CustomPainter {
   void _drawArrowHead(
     Canvas canvas,
     Offset position,
-    Direction direction,
+    MoveDirection direction,
     Color color,
     double cellSize,
   ) {
     // The arrowhead orientation depends ONLY on the arrow's head direction, not
     // on its body shape. `position` is the head (endNodeId) and the tip extends
-    // one head-length along `direction`. The mapping is symmetric for all four
-    // directions (left/right/up/down), so heads render correctly regardless of
-    // which way the body bends. (Canvas y grows downward: down = +pi/2.)
-    final angle = switch (direction) {
-      Direction.up => -math.pi / 2,
-      Direction.right => 0.0,
-      Direction.down => math.pi / 2,
-      Direction.left => math.pi,
-    };
+    // one head-length along `direction`. Derived from (dx, dy) rather than a
+    // per-value switch so it stays correct for any planar MoveDirection
+    // (equivalent to the old up/right/down/left switch for Direction values;
+    // canvas y grows downward, so down = +pi/2). Z-axis directions (dx=dy=0)
+    // never reach this painter — layered boards use a separate widget.
+    final angle = math.atan2(direction.dy.toDouble(), direction.dx.toDouble());
     // Capped relative to cell size: on dense boards the tip must not reach
     // far enough to draw over the next cell, where another arrow may sit.
     final length = math.max(5.0, math.min(18.0, cellSize * 0.42));

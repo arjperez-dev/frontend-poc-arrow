@@ -1,6 +1,7 @@
 import 'board_coordinate.dart';
+import 'move_direction.dart';
 
-enum Direction {
+enum Direction implements MoveDirection {
   up(0, -1),
   right(1, 0),
   down(0, 1),
@@ -8,16 +9,24 @@ enum Direction {
 
   const Direction(this.dx, this.dy);
 
+  @override
   final int dx;
+  @override
   final int dy;
 
+  @override
+  int get dz => 0;
+
+  @override
   BoardCoordinate applyTo(BoardCoordinate coordinate) {
     return BoardCoordinate(
       x: coordinate.x + dx,
       y: coordinate.y + dy,
+      z: coordinate.z,
     );
   }
 
+  @override
   Direction get opposite {
     return switch (this) {
       Direction.up => Direction.down,

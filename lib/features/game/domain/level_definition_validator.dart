@@ -1,11 +1,11 @@
 import 'arrow_path.dart';
 import 'board_coordinate.dart';
 import 'board_graph.dart';
-import 'direction.dart';
 import 'graph_edge.dart';
 import 'graph_node.dart';
 import 'level.dart';
 import 'level_definition.dart';
+import 'move_direction.dart';
 
 class LevelDefinitionException implements Exception {
   const LevelDefinitionException(this.message);
@@ -35,7 +35,7 @@ class LevelDefinitionValidator {
       for (final node in definition.nodes)
         node.id: GraphNode(
           id: node.id,
-          coordinate: BoardCoordinate(x: node.x, y: node.y),
+          coordinate: BoardCoordinate(x: node.x, y: node.y, z: node.z),
         ),
     };
 
@@ -52,7 +52,7 @@ class LevelDefinitionValidator {
           'Edge ${edge.id} references a node that does not exist.',
         );
       }
-      final direction = Direction.between(
+      final direction = MoveDirection.between(
         fromNode.coordinate,
         toNode.coordinate,
       );
@@ -166,10 +166,7 @@ class LevelDefinitionValidator {
         // Head-direction check: the body edge at the head must lead opposite to direction.
         final dir = arrow.direction;
         final headNode = nodesById[arrow.endNodeId]!;
-        final behindCoord = BoardCoordinate(
-          x: headNode.coordinate.x - dir.dx,
-          y: headNode.coordinate.y - dir.dy,
-        );
+        final behindCoord = dir.opposite.applyTo(headNode.coordinate);
         final hasBehindEdge = arrow.occupiedEdgeIds.any((eId) {
           final e = edgeDefById[eId];
           if (e == null) return false;
@@ -199,10 +196,8 @@ class LevelDefinitionValidator {
               edgeDefById[eId]!.toNodeId,
             ],
         }..remove(arrow.endNodeId);
-        var sweepX = headNode.coordinate.x + dir.dx;
-        var sweepY = headNode.coordinate.y + dir.dy;
+        var sweepCoord = dir.applyTo(headNode.coordinate);
         while (true) {
-          final sweepCoord = BoardCoordinate(x: sweepX, y: sweepY);
           final sweepNodeId = coordToNodeId[sweepCoord];
           if (sweepNodeId == null) break;
           if (ownBody.contains(sweepNodeId)) {
@@ -211,8 +206,7 @@ class LevelDefinitionValidator {
               'self-intersects own body at node $sweepNodeId.',
             );
           }
-          sweepX += dir.dx;
-          sweepY += dir.dy;
+          sweepCoord = dir.applyTo(sweepCoord);
         }
       }
 
