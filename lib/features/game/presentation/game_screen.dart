@@ -10,6 +10,7 @@ import '../../progress/infrastructure/local_progress_dependencies.dart';
 import 'game_screen_controller.dart';
 import 'game_ui_keys.dart';
 import 'widgets/graph_board.dart';
+import 'widgets/graph_3d_board.dart';
 import '../../../core/config/app_config.dart';
 
 class GameScreen extends StatefulWidget {
@@ -236,14 +237,24 @@ class _GameReadyView extends StatelessWidget {
           children: [
             _GameHud(session: session),
             const SizedBox(height: 18),
-            GraphBoard(
-              session: session,
-              lastActivatedArrowId: null,
-              flashingArrowId: controller.flashingArrowId,
-              animate: animateBoard,
-              onArrowActivated: controller.activateArrow,
-              onInteractionActiveChanged: onBoardInteractionActiveChanged,
-            ),
+            if (level.boardGraph.isMultiLayer)
+              Graph3DBoard(
+                session: session,
+                lastActivatedArrowId: null,
+                flashingArrowId: controller.flashingArrowId,
+                animate: animateBoard,
+                onArrowActivated: controller.activateArrow,
+                onInteractionActiveChanged: onBoardInteractionActiveChanged,
+              )
+            else
+              GraphBoard(
+                session: session,
+                lastActivatedArrowId: null,
+                flashingArrowId: controller.flashingArrowId,
+                animate: animateBoard,
+                onArrowActivated: controller.activateArrow,
+                onInteractionActiveChanged: onBoardInteractionActiveChanged,
+              ),
             const SizedBox(height: 18),
             if (!controller.isVictory && !controller.isGameOver)
               Row(

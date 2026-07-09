@@ -1619,3 +1619,215 @@ Add a dedicated widget test for `LeaderboardLevelPickerScreen`, then add the
 `AuthScreenController`/`SyncProgressOnLoginUseCase` unit test coverage
 deferred from Phase 21.1, then perform the combined manual on-device
 validation pass.
+
+
+## Phase 22 — 3D Graph Extension, Rotatable Perspective Board, 3D Levels 21–22 (2026-07-09)
+
+(Numbered Phase 22: Phase 19 is PR #18's level audit; Phases 20–21 are the upstream main-menu redesign and backend progress work, developed in parallel on arjperez-dev/frontend-poc-arrow.)
+
+### Context
+
+The graph model was extended from 2D to 3D per the "extend, don't modify"
+architectural plan: the theoretical graph design always supported 3D; this
+phase made it concrete, added a true-3D rendering surface, and shipped the
+first two multi-layer levels. All 2D gameplay, rendering, and levels 1–20
+are behavior-identical (levels 1–20 byte-identical in the asset).
+
+### Domain extension (Phases A–C of the plan)
+
+- **`board_coordinate.dart`**: `BoardCoordinate` gained `z` (default `0`) in
+  equality/hash — 2D coordinates are the z=0 embedding, not a separate type
+  (value-object subclass equality would break map-key symmetry in
+  `BoardGraph._nodesByCoordinate`).
+- **`move_direction.dart` (new)**: `MoveDirection` interface (`dx/dy/dz`,
+  `applyTo`, `opposite`, static `all`/`between`/`parse`). `Direction`
+  (planar enum, untouched values) now implements it; new `layer_direction.dart`
+  adds `LayerDirection.above/below` (z∓1). Code typed `Direction` stays
+  provably planar; dimension-aware code takes `MoveDirection`.
+- Type widening only (source-compatible): `ArrowPath.direction`,
+  `ArrowPathDefinition.direction`, `BoardGraph.getNeighbor/getEdgeInDirection/
+  isExitMove`. `GraphNodeDefinition`/`ManualGraphNodeDto` gained optional
+  `z` (absent in JSON = 0 — all existing level JSON valid unchanged).
+- **`MovementResolver` unchanged** — its coordinate sweep
+  (`direction.applyTo` → `nodeByCoordinate`) was already dimension-agnostic.
+- `LevelDefinitionValidator`: orthogonality via `MoveDirection.between`
+  (unit step on exactly one axis, any dimension); head-direction and
+  self-intersection checks now step via `applyTo` (behavior-preserving
+  refactor that made them 3D-correct for free).
+- `BoardGraph` additive helpers: `layers`, `isMultiLayer`, `layerSubgraph(z)`.
+- 2D painter's `_drawArrowHead` angle now `atan2(dy, dx)` over a
+  `MoveDirection` (identical output for all four planar directions).
+
+### 3D presentation (new files, 2D board untouched)
+
+- **`graph_3d_projector.dart`**: pure-math perspective camera — yaw orbit +
+  pitch tilt around the board center, layer spacing 2.2 world units,
+  perspective divide (focal 14 / camera distance 14), two-pass fit-to-
+  viewport × user zoom. Emits per-node `ProjectedPoint {screen, depth,
+  pixelScale}`; `directionOnScreen()` projects world-direction steps for
+  arrowheads/animation. At yaw=pitch=0 it looks straight down the layer axis.
+- **`graph_3d_board_painter.dart`**: painter's algorithm (depth-sorted
+  drawables, far→near), z-edges as slanted inter-layer lines, arrow strokes/
+  heads scaled by `pixelScale` (real foreshortening), arrowhead angle from
+  the projected direction vector (vertical arrows render as real arrows
+  pointing between layers), depth-fade cue, covered/free node rule reused,
+  exit = whole-shape slide along projected direction + fade, collision
+  shake along projected direction.
+- **`graph_3d_hit_tester.dart`**: screen-space head/segment hit test through
+  the same projector; nearest-depth arrow wins on overlap; slop capped at
+  45% of projected cell size.
+- **`graph_3d_board.dart`**: `Graph3DBoard` — one-finger drag orbits
+  (pitch clamped ±78°), pinch zooms (0.5–3×), tap activates, reset-view
+  button restores the initial camera (yaw 25°, pitch 30° so the level reads
+  as 3D at first paint), `animate` test flag, `onInteractionActiveChanged`
+  page-scroll-lock contract identical to `GraphBoard`.
+- **`game_screen.dart`**: `level.boardGraph.isMultiLayer ? Graph3DBoard :
+  GraphBoard` — the only selection point.
+
+### 3D levels 21–22
+
+- `AppConfig.manualLevelCount` 20 → 22. Home screen gained a dev shortcut
+  button (`AppRoutes.demo3d` → `GameScreen(levelNumber: 21)`) to play the 3D
+  levels without completing 1–20.
+- **Level 21** (hard, two 5×4 layers, 20 arrows): 16 planar row arrows +
+  4 single-node vertical arrows at column x=2 (two `below` on the top layer,
+  two `above` on the bottom), each blocked by the row arrow covering the
+  cell it sweeps into on the other layer.
+- **Level 22** (hard, three 5×4 layers, 28 arrows): 24 planar + 2
+  body-spanning vertical arrows (occupying a z-edge, sweeping through the
+  third layer) + 2 single-node verticals with two-layer-deep chains; two
+  planar arrows are themselves blocked by verticals in their sweep path
+  (dependencies cross layers in both directions). Greedy-solvable.
+- `tool/gen_levels.js`: z-aware core (`byCoord` keyed `x,y,z`, `DELTA`
+  3-vectors + `above`/`below`, `dirBetween` handles z-edges, `canExit`
+  sweeps in 3D); zero-edge arrows and cycle-check exemption allowed only for
+  `generationType: '3d'`; planar interior-gap check skips vertical arrows
+  and 3D levels (`gapExit=n/a(3d)`); new deterministic `build3DLevel21/22()`
+  builders and `--generate-3d` mode (keeps 1–20 byte-identical, mirror of
+  `--generate-figures`).
+
+### Test updates
+
+- `manual_levels_test.dart`: literals 20→22 (+`manual-022`); arrowhead-
+  orientation check scoped to arrows with ≥1 body edge (single-node arrows
+  have no body to orient) and made z-aware; interior-gap test now steps
+  `(dx, dy, dz)` with a 3-axis bounding box.
+- New: `board_coordinate_test.dart`, `move_direction_test.dart`,
+  `level_definition_validator_3d_test.dart`,
+  `layer_direction_movement_test.dart` (resolver escapes/collides through
+  layers, unchanged resolver), `graph_3d_projector_test.dart` (flat-camera
+  equivalence, layer separation when tilted, foreshortening, viewport fit,
+  projected layer-axis direction, zoom), `graph_3d_board_test.dart`
+  (renders, tap-activates via projected position, orbit drag, reset view).
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 158/158 passed.
+- `node tool/gen_levels.js --generate-3d`: writes 21–22; levels 1–20
+  verified byte-identical (git diff shows pure insertions).
+- `node tool/gen_levels.js --validate-only`: ALL VALID for all 22 levels
+  (21: comp=1, solvable, 20 arrows, layers=2; 22: comp=1, solvable,
+  28 arrows, layers=3); hard tier avg 27.3 > medium 17.6.
+- Manual on-device validation pending: level 21/22 open with the tilted 3D
+  camera, drag orbit / pinch zoom / tap-to-exit, vertical arrows blocked
+  until their covering rows escape, victory → next level flows 20→21→22.
+
+### Limitations
+
+- Exit animation in 3D is the whole-shape slide (Phase 9 style); the
+  arc-length "train on tracks" variant from Phase 13 has not been ported to
+  the 3D painter.
+- The 3D board has no `InteractiveViewer` pan — orbit + zoom substitute for
+  it. Dense future 3D levels may want screen-space panning as well.
+- `docs/LEVEL_AUTHORING.md` §16 documents the 3D schema and constraints.
+
+## Phase 22.1 — Spanning-Only Vertical Arrows + 3D Figure Levels 23–25 (2026-07-09)
+
+### Context
+
+Post-device feedback on Phase 22: single-node vertical arrows (a lone ⌄ dot
+occupying one cell) read badly on the 3D board. The user asked that every
+arrow span at least two nodes, like planar arrows, and for three more 3D
+levels, more complex than 21–22, shaped as recognizable figures.
+
+### Rule change: no single-node arrows anywhere
+
+- Vertical arrows now always occupy a z-edge between two layers (one cell on
+  each). `Builder3D.verticalSingle` was deleted; `tool/gen_levels.js`'s
+  `structureErrors` re-enforces "arrow has no edges" strictly for ALL levels
+  (the Phase 22 3D exemption was removed), and the cycle/head-behind checks
+  are z-aware.
+- New Dart asset test `should_have_no_single_node_arrows`; the arrowhead-
+  orientation test no longer skips edge-less arrows (none may exist).
+- The domain `LevelDefinitionValidator` still permits single-node arrows
+  (unit-test fixtures use them); the prohibition is an asset/tool-level
+  contract, same tier as no-free-nodes.
+
+### Levels 21–22 redesigned, 23–25 added (all deterministic builders)
+
+- **21** (2 × 5×4 layers, 20 arrows): 4 spanning verticals at column x=2;
+  four planar rows point INTO the vertical column and wait for it (verticals
+  exit instantly but free a cell on both layers at once).
+- **22** (3 × 5×4 layers, 28 arrows): verticals span adjacent layers and
+  their sweeps cross the remaining layer; planar arrows on two layers point
+  into vertical columns — dependencies cross layers in both directions.
+- **23 "Pyramid"** (4 concentric tiers 2×2 / 4×4 / 6×6 / 8×8, 42 arrows,
+  120 nodes): tier z1's four center columns are spans down to z2 with heads
+  pointing up — each blocked by an apex cell, so the pyramid's core unlocks
+  only after the apex is cleared. Rings use column arrows (new
+  `Builder3D.colArrow`).
+- **24 "Diamond"** (5 tiers 2×2 / 4×4 / 6×6 / 4×4 / 2×2, 34 arrows, 76
+  nodes): the center column is a lattice of four span-pairs chaining
+  tip → equator → tip in both directions; two equator rows thread through
+  the lattice (up to 3-deep chains).
+- **25 "Hourglass"** (5 tiers 5×5 / 3×3 / **1×1** / 3×3 / 5×5, 30 arrows,
+  69 nodes): a true single-cell waist; the whole x=2 center column is spans
+  (W threads the neck and waits on G beneath it), and one row on each outer
+  face points into the column.
+- First-pass shapes (3 similar-sized tiers each) were rejected by the user
+  as unreadable; the figures were rebuilt with more tiers and stronger size
+  contrast so the silhouettes read under perspective.
+- All five: `comp=1`, no free/shared nodes, greedy-solvable, hard band,
+  `gapExit=-`. Hard tier avg 29.0 > medium 17.6. Levels 1–20 byte-identical.
+
+### Validation updates for figure-shaped layers
+
+- Stacked layers of different sizes make the strict "every in-bbox swept
+  coordinate has a node" rule false-positive (sweeping past a smaller
+  layer's silhouette edge is legitimate). 3D levels now use **real-gap
+  semantics** (mirroring PR #18's figure-aware check): only a gap that hides
+  a node further along the sweep is a defect. JS: new
+  `hasRealInteriorGapExit3D` wired into `validateAll`; Dart:
+  `should_have_no_interior_gap_exits` branches on `generationType == '3d'`.
+- `Builder3D.weaveLayers` now weaves BOTH in-plane axes (column-arrow layers
+  have no row body edges of their own; edges are never gameplay-relevant
+  unless blocked).
+- Merge note: PR #18 (`feat/phase-19-level-audit-and-validation`) landed on
+  `feat/3d-levels` mid-session via a GitHub Desktop stash pop; the resulting
+  `gen_levels.js` conflicts were resolved by combining its figure-aware gap
+  check with the 3D changes.
+
+### Files Touched
+
+- `tool/gen_levels.js` (3D builder section rewritten; strictness restored;
+  `hasRealInteriorGapExit3D`)
+- `assets/levels/manual_levels.json` (21–22 regenerated, 23–25 added;
+  1–20 byte-identical)
+- `lib/core/config/app_config.dart` (`manualLevelCount` 22 → 25)
+- `test/features/game/infrastructure/manual_levels_test.dart` (literals → 25,
+  no-single-node test, real-gap branch, orientation check unscoped)
+- `test/features/game/presentation/graph_3d_board_test.dart` (fixture's
+  vertical arrow now spans a z-edge)
+- `docs/LEVEL_AUTHORING.md` §16 (spanning-only rule, figures, real-gap)
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 161/161 passed.
+- `node tool/gen_levels.js --generate-3d`: ALL VALID, wrote 21–25;
+  `--validate-only`: ALL VALID for 25 levels; zero `occupiedEdges: []`
+  arrows across the entire asset (verified by script).
+- Manual on-device validation pending: figures read as pyramid/diamond/
+  hourglass under orbit; vertical arrows render as two-node pieces spanning
+  layers; chains behave (e.g. 23's core waits for the apex).

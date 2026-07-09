@@ -101,17 +101,22 @@ class ManualGraphNodeDto {
     required this.id,
     required this.x,
     required this.y,
+    this.z = 0,
   });
 
   final String id;
   final int x;
   final int y;
 
+  /// Layer axis. Optional in JSON; absent means z=0 (a 2D level).
+  final int z;
+
   factory ManualGraphNodeDto.fromJson(Map<String, Object?> json) {
     return ManualGraphNodeDto(
       id: _requiredString(json, 'id'),
       x: _requiredInt(json, 'x'),
       y: _requiredInt(json, 'y'),
+      z: _optionalInt(json, 'z') ?? 0,
     );
   }
 }
@@ -199,6 +204,15 @@ int _requiredInt(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is! int) {
     throw FormatException('Required integer "$key" is missing.');
+  }
+  return value;
+}
+
+int? _optionalInt(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is! int) {
+    throw FormatException('Optional integer "$key" must be an int.');
   }
   return value;
 }

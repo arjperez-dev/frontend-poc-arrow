@@ -39,12 +39,12 @@ void main() {
     );
   });
 
-  test('should_load_20_manual_levels_from_assets', () async {
+  test('should_load_25_manual_levels_from_assets', () async {
     final levels = await GetLocalLevelsUseCase(repository)();
 
-    expect(levels, hasLength(20));
+    expect(levels, hasLength(25));
     expect(levels.first.number, 1);
-    expect(levels.last.number, 20);
+    expect(levels.last.number, 25);
   });
 
   test('should_validate_all_manual_levels', () async {
@@ -57,7 +57,7 @@ void main() {
 
     final levels = dtos.map(mapper.toDomain).map(validator.validate).toList();
 
-    expect(levels, hasLength(20));
+    expect(levels, hasLength(25));
     expect(levels.every((level) => level.boardGraph.nodes.isNotEmpty), isTrue);
     expect(levels.every((level) => level.boardGraph.edges.isNotEmpty), isTrue);
   });
@@ -85,17 +85,18 @@ void main() {
     final levels = await GetLocalLevelsUseCase(repository)();
     final numbers = levels.map((level) => level.number).toSet();
 
-    expect(numbers, hasLength(20));
-    expect(numbers, containsAll(List<int>.generate(20, (index) => index + 1)));
+    expect(numbers, hasLength(25));
+    expect(numbers, containsAll(List<int>.generate(25, (index) => index + 1)));
   });
 
   test('should_have_unique_level_ids', () async {
     final levels = await GetLocalLevelsUseCase(repository)();
     final ids = levels.map((level) => level.id).toSet();
 
-    expect(ids, hasLength(20));
+    expect(ids, hasLength(25));
     expect(ids, contains('manual-001'));
     expect(ids, contains('manual-020'));
+    expect(ids, contains('manual-025'));
   });
 
   test(
@@ -281,7 +282,8 @@ void main() {
           if (otherId == null) continue;
           final other = graph.nodeById(otherId)!;
           if (other.coordinate.x == head.coordinate.x - dir.dx &&
-              other.coordinate.y == head.coordinate.y - dir.dy) {
+              other.coordinate.y == head.coordinate.y - dir.dy &&
+              other.coordinate.z == head.coordinate.z - dir.dz) {
             bodyIsBehind = true;
           }
         }
@@ -289,6 +291,26 @@ void main() {
             reason:
                 'Level ${level.number} arrow ${arrow.id} head not at exit end '
                 '(dir ${dir.name})');
+      }
+    }
+  });
+
+  test('should_have_no_single_node_arrows', () async {
+    // Every arrow — planar or vertical (above/below) — must occupy at least
+    // one edge, i.e. span at least two nodes. A one-node arrow renders as a
+    // floating dot with no body, which reads wrong on the 3D board.
+    final levels = await GetLocalLevelsUseCase(repository)();
+    for (final level in levels) {
+      for (final arrow in level.arrows) {
+        expect(
+          arrow.occupiedEdgeIds,
+          isNotEmpty,
+          reason:
+              'Level ${level.number} arrow ${arrow.id} occupies a single node',
+        );
+        expect(arrow.orderedNodeIds.length, greaterThanOrEqualTo(2),
+            reason:
+                'Level ${level.number} arrow ${arrow.id} spans fewer than 2 nodes');
       }
     }
   });
@@ -353,35 +375,70 @@ void main() {
     // is part of the shape's own visible outer edge, not an accidental hole,
     // so this bbox-relative check does not apply to them (see the matching
     // comment in tool/gen_levels.js's generateFigureLevel).
+    // The sweep is z-aware: it steps by (dx, dy, dz) and the bounding box
+    // covers all three axes. 2D random tiers (1-15) use the strict rule
+    // (every in-bbox swept coordinate must hold a node). 3D figure levels
+    // (generationType '3d') use real-gap semantics: empty space past a
+    // smaller layer's silhouette (pyramid/diamond/hourglass) is legitimate;
+    // a defect is only a gap that HIDES a node further along the sweep —
+    // the resolver would exit at the gap while the player sees a blocker.
     final levels = (await GetLocalLevelsUseCase(repository)())
         .where((level) => level.metadata['generationType'] != 'figure');
     for (final level in levels) {
+      final is3D = level.metadata['generationType'] == '3d';
       final graph = level.boardGraph;
       final nodes = graph.nodes;
       final xs = nodes.map((n) => n.coordinate.x);
       final ys = nodes.map((n) => n.coordinate.y);
+      final zs = nodes.map((n) => n.coordinate.z);
       final minX = xs.reduce((a, b) => a < b ? a : b);
       final maxX = xs.reduce((a, b) => a > b ? a : b);
       final minY = ys.reduce((a, b) => a < b ? a : b);
       final maxY = ys.reduce((a, b) => a > b ? a : b);
+      final minZ = zs.reduce((a, b) => a < b ? a : b);
+      final maxZ = zs.reduce((a, b) => a > b ? a : b);
 
       for (final arrow in level.arrows) {
         final head = graph.nodeById(arrow.endNodeId)!;
         final dir = arrow.direction;
         var cx = head.coordinate.x;
         var cy = head.coordinate.y;
+        var cz = head.coordinate.z;
+        var sawGap = false;
         while (true) {
           cx += dir.dx;
           cy += dir.dy;
-          if (cx < minX || cx > maxX || cy < minY || cy > maxY) break;
+          cz += dir.dz;
+          if (cx < minX ||
+              cx > maxX ||
+              cy < minY ||
+              cy > maxY ||
+              cz < minZ ||
+              cz > maxZ) {
+            break;
+          }
           final next = graph.nodeByCoordinate(
-            BoardCoordinate(x: cx, y: cy),
+            BoardCoordinate(x: cx, y: cy, z: cz),
           );
+          if (is3D) {
+            if (next == null) {
+              sawGap = true;
+              continue;
+            }
+            expect(
+              sawGap,
+              isFalse,
+              reason: 'Level ${level.number} arrow ${arrow.id} sweep crosses '
+                  'a gap and then reaches ${next.id} at ($cx,$cy,$cz) — '
+                  'hidden blocker the resolver would skip',
+            );
+            break;
+          }
           expect(
             next,
             isNotNull,
             reason: 'Level ${level.number} arrow ${arrow.id} exits through '
-                'interior gap at ($cx,$cy) — boundary-removal hole makes '
+                'interior gap at ($cx,$cy,$cz) — boundary-removal hole makes '
                 'another arrow appear to block but resolver exits early',
           );
         }

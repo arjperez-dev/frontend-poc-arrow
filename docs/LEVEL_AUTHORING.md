@@ -351,3 +351,38 @@ spikes and rendered as illegible noise; the fix was defining each spike's
 triangle explicitly with consistent gaps, then shrinking the whole shape
 (a large solid rim band, like a dense near-rectangle, had a near-zero
 solvable rate) until the solved rate became reliable (~1% per attempt).
+
+## 16. 3D levels (21–25)
+
+Levels 21+ are **multi-layer (3D)** levels. The graph model is the same —
+nodes, edges, arrows — extended with a third axis:
+
+- Nodes take an optional integer `"z"` field (absent = `0`, an ordinary 2D
+  level). Convention for 3D ids: `n<x>_<y>_<z>`.
+- Two new arrow directions: `"above"` (z−1) and `"below"` (z+1). They are the
+  layer axis, distinct from `"up"`/`"down"` which remain the planar Y axis.
+- Edges may connect z-adjacent nodes (same x/y, |Δz| = 1). Like weave edges,
+  unclaimed z-edges exist purely for single-component connectivity.
+- **Every arrow must occupy at least one edge (span ≥ 2 nodes).** Vertical
+  arrows always span a z-edge between two layers; single-node arrows are
+  rejected by both the JS validator and the Dart asset tests (a one-node
+  arrow renders as a floating dot). The head must be the exit-facing end,
+  exactly like planar arrows.
+- Cross-layer gameplay, two mechanisms: (1) a vertical arrow's head sweep
+  passes through the cells directly above/below it on the layers beyond —
+  it collides until the arrows covering those cells escape; (2) a planar
+  arrow's sweep passes through a vertical arrow's cell on its own layer —
+  blocked until the vertical escapes. All other rules (head-only collision,
+  no-free-nodes, disjoint arrows, greedy solvability) apply unchanged.
+- Layers may have **different silhouettes** — levels 23–25 stack differently
+  sized layers into figures (23 Pyramid 2×2/4×4/6×6/8×8, 24 Diamond
+  2×2/4×4/6×6/4×4/2×2, 25 Hourglass 5×5/3×3/1×1/3×3/5×5). The interior-gap rule for
+  3D levels therefore uses real-gap semantics (like figures): sweeping into
+  empty space past a smaller layer's edge is fine; a gap that HIDES a node
+  further along the sweep is a defect.
+- Rendering: multi-layer levels automatically use the rotatable perspective
+  board (`Graph3DBoard`); 2D levels keep the flat board. No per-level flag.
+- `metadata.generationType` must be `"3d"` (selects the 3D real-gap check).
+- Regenerate/validate with `node tool/gen_levels.js --generate-3d` (rewrites
+  21–25 from the deterministic builders, keeps 1–20 byte-identical) and
+  `--validate-only` (all 25 levels, never writes).

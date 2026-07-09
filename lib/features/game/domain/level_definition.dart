@@ -1,4 +1,4 @@
-import 'direction.dart';
+import 'move_direction.dart';
 
 class LevelDefinition {
   const LevelDefinition({
@@ -27,11 +27,16 @@ class GraphNodeDefinition {
     required this.id,
     required this.x,
     required this.y,
+    this.z = 0,
   });
 
   final String id;
   final int x;
   final int y;
+
+  /// Layer axis. Defaults to 0 so every existing 2D level definition is
+  /// unaffected.
+  final int z;
 }
 
 class GraphEdgeDefinition {
@@ -59,5 +64,5 @@ class ArrowPathDefinition {
   final List<String> occupiedEdgeIds;
   final String startNodeId;
   final String endNodeId;
-  final Direction direction;
+  final MoveDirection direction;
 }

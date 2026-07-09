@@ -1,5 +1,5 @@
-import '../domain/direction.dart';
 import '../domain/level_definition.dart';
+import '../domain/move_direction.dart';
 import 'manual_level_dto.dart';
 
 class LevelDefinitionMapper {
@@ -16,7 +16,14 @@ class LevelDefinitionMapper {
       number: dto.number,
       name: dto.name,
       nodes: dto.definitionJson.nodes
-          .map((node) => GraphNodeDefinition(id: node.id, x: node.x, y: node.y))
+          .map(
+            (node) => GraphNodeDefinition(
+              id: node.id,
+              x: node.x,
+              y: node.y,
+              z: node.z,
+            ),
+          )
           .toList(growable: false),
       edges: dto.definitionJson.edges
           .map(
@@ -36,7 +43,7 @@ class LevelDefinitionMapper {
                   .toList(growable: false),
               startNodeId: arrow.startNodeId,
               endNodeId: arrow.endNodeId,
-              direction: _parseDirection(arrow.direction),
+              direction: MoveDirection.parse(arrow.direction),
             ),
           )
           .toList(growable: false),
@@ -61,15 +68,5 @@ class LevelDefinitionMapper {
     }
 
     throw FormatException('Edge "$edgeId" does not exist in manual level.');
-  }
-
-  Direction _parseDirection(String value) {
-    return switch (value) {
-      'up' => Direction.up,
-      'right' => Direction.right,
-      'down' => Direction.down,
-      'left' => Direction.left,
-      _ => throw FormatException('Unknown arrow direction "$value".'),
-    };
   }
 }

@@ -23,10 +23,18 @@ Check every item on this list before starting any phase. Update this file when c
 
 ## Levels
 
-- `assets/levels/manual_levels.json` is the **authoritative hand-editable source**. Do not run `node tool/gen_levels.js --generate` (levels 1–15) or `--generate-figures` (levels 16–20) unless regeneration is explicitly intended by the task.
+- `assets/levels/manual_levels.json` is the **authoritative hand-editable source**. Do not run `node tool/gen_levels.js --generate` (levels 1–15), `--generate-figures` (levels 16–20), or `--generate-3d` (levels 21–25) unless regeneration is explicitly intended by the task.
 - `--validate-only` is always safe and reads without writing.
 - **Level 2 test contract**: name='Level 2', arrow count ≥ 10. Do not change level 2's name or arrow count below the floor without updating `test/features/game/infrastructure/manual_levels_test.dart`.
-- **20 levels total** (1–15 random rectangle boards, 16–20 figure silhouettes: heart/diamond/club/spade/crown). `AppConfig.manualLevelCount` is the single source of truth for the count — do not hardcode `15` or `20` elsewhere. See `docs/LEVEL_AUTHORING.md` §15 for the figure-level generation model (why `hasInteriorGapExit` doesn't apply to them, why solvability — not density — is the binding constraint when tuning a shape).
+- **25 levels total** (1–15 random rectangle boards, 16–20 figure silhouettes: heart/diamond/club/spade/crown, 21–25 multi-layer 3D levels: 23 pyramid / 24 diamond / 25 hourglass). `AppConfig.manualLevelCount` is the single source of truth for the count — do not hardcode a level count elsewhere. See `docs/LEVEL_AUTHORING.md` §15 (figure-level model) and §16 (3D-level model).
+- **No single-node arrows** (Phase 22.1): every arrow — planar or vertical — must occupy ≥ 1 edge (≥ 2 nodes). Vertical arrows always span a z-edge between two layers. Enforced by `gen_levels.js` `structureErrors` and the Dart asset test `should_have_no_single_node_arrows`; the domain validator stays permissive (unit fixtures use single-node arrows).
+- 3D levels use `generationType: '3d'` and real-gap semantics for the interior-gap check (empty space past a smaller tier's silhouette is legitimate; only a gap hiding a node further along the sweep is a defect) — mirrored in JS (`hasRealInteriorGapExit3D`) and the Dart test.
+
+## 3D Board (Phase 22)
+
+- Multi-layer levels (`boardGraph.isMultiLayer`) render via `Graph3DBoard` (rotatable perspective camera); 2D levels keep the flat `GraphBoard`. The selection point is the single conditional in `game_screen.dart` — do not modify the 2D board stack for 3D concerns.
+- `Graph3DProjector` is the single source of truth for 3D screen positions: the painter draws through it and `Graph3DHitTester` hit-tests through the same instance/parameters — never compute a 3D screen position by another path or taps will disagree with pixels.
+- `MovementResolver` is dimension-agnostic (coordinate sweep). Do not add z-special-casing to it; extend via `MoveDirection` implementations instead (Open/Closed — `Direction` stays planar-only, dimension-aware code accepts `MoveDirection`).
 
 ## Audio (Phase 15)
 
@@ -58,4 +66,4 @@ Check every item on this list before starting any phase. Update this file when c
 
 ---
 
-*Last updated: 2026-06-24 (Phase 17/18 — board rendering polish: cell-size-relative scaling for stroke/arrowhead/hit-slop, non-square board aspect ratio; pinch-to-zoom reliability fix via pointer-count-driven scroll lock)*
+*Last updated: 2026-07-09 (Phase 22/22.1 — 3D graph extension: level count 20 → 25, added `--generate-3d` mode, no-single-node-arrows rule, 3D real-gap semantics, and the new "3D Board" section covering Graph3DBoard/Graph3DProjector invariants)*
