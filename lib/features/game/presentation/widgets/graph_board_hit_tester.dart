@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import '../../domain/game_session.dart';
+import 'board_geometry.dart';
 import 'graph_board_layout.dart';
 
 class GraphBoardHitTester {
@@ -36,7 +37,7 @@ class GraphBoardHitTester {
         final from = layout.positionOf(nodes[i - 1]);
         final to = layout.positionOf(nodes[i]);
         if (from == null || to == null) continue;
-        if (_distanceToSegment(position, from, to) <= hitSlop) {
+        if (distanceToSegment(position, from, to) <= hitSlop) {
           return arrow.id;
         }
       }
@@ -50,28 +51,5 @@ class GraphBoardHitTester {
   /// unambiguous between adjacent arrows instead of matching both.
   double _hitSlopFor(double cellSize) {
     return math.max(minHitSlop, math.min(maxHitSlop, cellSize * 0.45));
-  }
-
-  double _distanceToSegment(Offset point, Offset start, Offset end) {
-    final segment = end - start;
-    final lengthSquared = segment.dx * segment.dx + segment.dy * segment.dy;
-    if (lengthSquared == 0) {
-      return (point - start).distance;
-    }
-
-    final t =
-        (((point.dx - start.dx) * segment.dx) +
-            ((point.dy - start.dy) * segment.dy)) /
-        lengthSquared;
-    final clamped = t.clamp(0.0, 1.0);
-    final projection = Offset(
-      start.dx + (segment.dx * clamped),
-      start.dy + (segment.dy * clamped),
-    );
-
-    return math.sqrt(
-      math.pow(point.dx - projection.dx, 2) +
-          math.pow(point.dy - projection.dy, 2),
-    );
   }
 }

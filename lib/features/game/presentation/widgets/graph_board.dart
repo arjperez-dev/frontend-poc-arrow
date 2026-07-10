@@ -1,13 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../game_ui_keys.dart';
 import '../../domain/arrow_path.dart';
 import '../../domain/game_session.dart';
 import '../../domain/graph_node.dart';
+import 'board_reset_view_button.dart';
 import 'graph_board_hit_tester.dart';
 import 'graph_board_layout.dart';
 import 'graph_board_painter.dart';
@@ -51,8 +50,7 @@ class GraphBoard extends StatefulWidget {
   State<GraphBoard> createState() => _GraphBoardState();
 }
 
-class _GraphBoardState extends State<GraphBoard>
-    with TickerProviderStateMixin {
+class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
   AnimationController? _exitController;
   AnimationController? _shakeController;
   ArrowPath? _exitingArrow;
@@ -70,7 +68,10 @@ class _GraphBoardState extends State<GraphBoard>
     _activeIds = widget.session.activeArrows.map((a) => a.id).toSet();
     if (widget.animate) {
       _exitController =
-          AnimationController(vsync: this, duration: const Duration(milliseconds: 700))
+          AnimationController(
+              vsync: this,
+              duration: const Duration(milliseconds: 700),
+            )
             ..addListener(() => setState(() {}))
             ..addStatusListener((status) {
               if (status == AnimationStatus.completed) {
@@ -78,7 +79,10 @@ class _GraphBoardState extends State<GraphBoard>
               }
             });
       _shakeController =
-          AnimationController(vsync: this, duration: const Duration(milliseconds: 300))
+          AnimationController(
+              vsync: this,
+              duration: const Duration(milliseconds: 300),
+            )
             ..addListener(() => setState(() {}))
             ..addStatusListener((status) {
               if (status == AnimationStatus.completed) {
@@ -179,7 +183,8 @@ class _GraphBoardState extends State<GraphBoard>
             return Listener(
               onPointerDown: (_) => _onPointerCountChanged(_activePointers + 1),
               onPointerUp: (_) => _onPointerCountChanged(_activePointers - 1),
-              onPointerCancel: (_) => _onPointerCountChanged(_activePointers - 1),
+              onPointerCancel: (_) =>
+                  _onPointerCountChanged(_activePointers - 1),
               child: Stack(
                 children: [
                   Positioned.fill(
@@ -194,7 +199,10 @@ class _GraphBoardState extends State<GraphBoard>
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: _ResetViewButton(onPressed: _resetView),
+                    child: BoardResetViewButton(
+                      onPressed: _resetView,
+                      icon: Icons.center_focus_strong,
+                    ),
                   ),
                 ],
               ),
@@ -231,29 +239,4 @@ double _boardAspectRatio(List<GraphNode> nodes) {
   final width = math.max(1, xs.reduce(math.max) - xs.reduce(math.min));
   final height = math.max(1, ys.reduce(math.max) - ys.reduce(math.min));
   return (width / height).clamp(0.6, 1.6);
-}
-
-class _ResetViewButton extends StatelessWidget {
-  const _ResetViewButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final localizations = AppLocalizations.of(context);
-    return Tooltip(
-      message: localizations.resetView,
-      child: Material(
-        color: AppTheme.surface.withValues(alpha: 0.85),
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: IconButton(
-          key: GameUiKeys.resetViewButton,
-          icon: const Icon(Icons.center_focus_strong, size: 20),
-          tooltip: localizations.resetView,
-          onPressed: onPressed,
-        ),
-      ),
-    );
-  }
 }

@@ -1,12 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../game_ui_keys.dart';
 import '../../domain/arrow_path.dart';
 import '../../domain/game_session.dart';
+import 'board_reset_view_button.dart';
 import 'graph_3d_board_painter.dart';
 import 'graph_3d_hit_tester.dart';
 import 'graph_3d_projector.dart';
@@ -75,26 +74,28 @@ class _Graph3DBoardState extends State<Graph3DBoard>
     super.initState();
     _activeIds = widget.session.activeArrows.map((a) => a.id).toSet();
     if (widget.animate) {
-      _exitController = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 700),
-      )
-        ..addListener(() => setState(() {}))
-        ..addStatusListener((status) {
-          if (status == AnimationStatus.completed) {
-            setState(() => _exitingArrow = null);
-          }
-        });
-      _shakeController = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 300),
-      )
-        ..addListener(() => setState(() {}))
-        ..addStatusListener((status) {
-          if (status == AnimationStatus.completed) {
-            setState(() => _shakeArrowId = null);
-          }
-        });
+      _exitController =
+          AnimationController(
+              vsync: this,
+              duration: const Duration(milliseconds: 700),
+            )
+            ..addListener(() => setState(() {}))
+            ..addStatusListener((status) {
+              if (status == AnimationStatus.completed) {
+                setState(() => _exitingArrow = null);
+              }
+            });
+      _shakeController =
+          AnimationController(
+              vsync: this,
+              duration: const Duration(milliseconds: 300),
+            )
+            ..addListener(() => setState(() {}))
+            ..addStatusListener((status) {
+              if (status == AnimationStatus.completed) {
+                setState(() => _shakeArrowId = null);
+              }
+            });
     }
   }
 
@@ -168,11 +169,16 @@ class _Graph3DBoardState extends State<Graph3DBoard>
               onScaleUpdate: (details) {
                 setState(() {
                   if (details.pointerCount >= 2) {
-                    _zoom = (_zoomAtGestureStart * details.scale).clamp(0.5, 3.0);
+                    _zoom = (_zoomAtGestureStart * details.scale).clamp(
+                      0.5,
+                      3.0,
+                    );
                   }
                   _yaw += details.focalPointDelta.dx * 0.008;
-                  _pitch = (_pitch + details.focalPointDelta.dy * 0.008)
-                      .clamp(-_maxPitch, _maxPitch);
+                  _pitch = (_pitch + details.focalPointDelta.dy * 0.008).clamp(
+                    -_maxPitch,
+                    _maxPitch,
+                  );
                 });
               },
               child: CustomPaint(
@@ -204,7 +210,10 @@ class _Graph3DBoardState extends State<Graph3DBoard>
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: _ResetViewButton(onPressed: _resetView),
+                    child: BoardResetViewButton(
+                      onPressed: _resetView,
+                      icon: Icons.threed_rotation,
+                    ),
                   ),
                 ],
               ),
@@ -230,30 +239,5 @@ class _Graph3DBoardState extends State<Graph3DBoard>
       _pitch = _initialPitch;
       _zoom = 1.0;
     });
-  }
-}
-
-class _ResetViewButton extends StatelessWidget {
-  const _ResetViewButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final localizations = AppLocalizations.of(context);
-    return Tooltip(
-      message: localizations.resetView,
-      child: Material(
-        color: AppTheme.surface.withValues(alpha: 0.85),
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: IconButton(
-          key: GameUiKeys.resetViewButton,
-          icon: const Icon(Icons.threed_rotation, size: 20),
-          tooltip: localizations.resetView,
-          onPressed: onPressed,
-        ),
-      ),
-    );
   }
 }

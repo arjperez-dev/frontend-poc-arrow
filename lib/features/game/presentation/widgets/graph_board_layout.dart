@@ -5,7 +5,10 @@ import '../../domain/board_graph.dart';
 import '../../domain/graph_node.dart';
 
 class GraphBoardLayout {
-  const GraphBoardLayout._({required this.positionsByNodeId, required this.step});
+  const GraphBoardLayout._({
+    required this.positionsByNodeId,
+    required this.step,
+  });
 
   final Map<String, Offset> positionsByNodeId;
 

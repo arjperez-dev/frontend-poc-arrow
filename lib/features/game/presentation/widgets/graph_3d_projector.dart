@@ -78,7 +78,11 @@ class Graph3DProjector {
     return Graph3DProjector._(points, yaw: yaw, pitch: pitch);
   }
 
-  const Graph3DProjector._(this._points, {required this.yaw, required this.pitch});
+  const Graph3DProjector._(
+    this._points, {
+    required this.yaw,
+    required this.pitch,
+  });
 
   final Map<String, ProjectedPoint> _points;
   final double yaw;
