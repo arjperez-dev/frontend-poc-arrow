@@ -45,14 +45,29 @@ const MAX_RETRIES = { easy: 200, medium: 200, hard: 8000 };
 const nid = (x, y) => `n${x}_${y}`;
 const eid = (a, b) => `${a}-${b}`;
 
+// z is optional on nodes (absent = 0, i.e. an ordinary 2D level).
+const zOf = n => n.z || 0;
+
 function dirBetween(a, b) {
-  if (b.x === a.x + 1 && b.y === a.y) return 'right';
-  if (b.x === a.x - 1 && b.y === a.y) return 'left';
-  if (b.x === a.x && b.y === a.y + 1) return 'down';
-  if (b.x === a.x && b.y === a.y - 1) return 'up';
+  const za = zOf(a), zb = zOf(b);
+  if (za === zb) {
+    if (b.x === a.x + 1 && b.y === a.y) return 'right';
+    if (b.x === a.x - 1 && b.y === a.y) return 'left';
+    if (b.x === a.x && b.y === a.y + 1) return 'down';
+    if (b.x === a.x && b.y === a.y - 1) return 'up';
+    return null;
+  }
+  if (b.x === a.x && b.y === a.y) {
+    if (zb === za + 1) return 'below';
+    if (zb === za - 1) return 'above';
+  }
   return null;
 }
-const DELTA = { right: [1, 0], left: [-1, 0], down: [0, 1], up: [0, -1] };
+// Unit steps as [dx, dy, dz]. above/below are the z-layer axis (3D levels).
+const DELTA = {
+  right: [1, 0, 0], left: [-1, 0, 0], down: [0, 1, 0], up: [0, -1, 0],
+  above: [0, 0, -1], below: [0, 0, 1],
+};
 const H_DIRS = ['right', 'left']; // horizontal directions
 
 function parseCoord(id) {
@@ -710,6 +725,290 @@ function buildFigureLevels() {
 }
 
 // ---------------------------------------------------------------------------
+// 3D levels 21-25 (deterministic hand-designed builders — no RNG)
+//
+// Multi-layer levels: nodes carry a z coordinate; arrows may point 'above'/
+// 'below'. EVERY arrow occupies at least 2 nodes — vertical arrows always
+// span a z-edge between two layers (single-node arrows looked like floating
+// dots and are forbidden everywhere). Cross-layer gameplay comes from two
+// mechanisms:
+//   1. a vertical arrow's head sweep passes through cells of the layers
+//      beyond it — blocked until the arrows covering those cells escape;
+//   2. a planar arrow's sweep passes through a vertical arrow's cell on its
+//      own layer — blocked until the vertical escapes.
+//
+// 23-25 are figure levels: layer silhouettes of different sizes stack into a
+// recognizable 3D form (pyramid / diamond / hourglass).
+//
+// Design invariants (same as every other tier, verified by validateAll and
+// the Dart asset tests): every node covered at start, node/edge-disjoint
+// arrows, single connected component, greedy-solvable, hard density band.
+// ---------------------------------------------------------------------------
+const nid3 = (x, y, z) => `n${x}_${y}_${z}`;
+
+function Builder3D(number, name, difficulty) {
+  return {
+    number, name, difficulty,
+    _nodes: new Map(), _edges: new Map(), _arrows: [], _seq: 0,
+    addNode(x, y, z) {
+      const id = nid3(x, y, z);
+      if (!this._nodes.has(id)) this._nodes.set(id, { x, y, z });
+      return id;
+    },
+    addEdge(a, b) {
+      if (!this._edges.has(eid(a, b)) && !this._edges.has(eid(b, a)))
+        this._edges.set(eid(a, b), { from: a, to: b });
+    },
+    edgeBetween(a, b) {
+      if (this._edges.has(eid(a, b))) return eid(a, b);
+      if (this._edges.has(eid(b, a))) return eid(b, a);
+      return null;
+    },
+    _pushArrow(ids, direction) {
+      for (let i = 0; i < ids.length - 1; i++) this.addEdge(ids[i], ids[i + 1]);
+      const occ = [];
+      for (let i = 0; i < ids.length - 1; i++) occ.push(this.edgeBetween(ids[i], ids[i + 1]));
+      this._arrows.push({
+        id: 'a' + (++this._seq), occupiedEdges: occ,
+        startNodeId: ids[0], endNodeId: ids[ids.length - 1], direction,
+      });
+    },
+    // Horizontal arrow over consecutive x cells at (y, z). Tail→head order:
+    // for 'left' the head is the lowest x, for 'right' the highest.
+    rowArrow(xs, y, z, direction) {
+      const ordered = direction === 'left' ? [...xs].sort((a, b) => b - a) : [...xs].sort((a, b) => a - b);
+      this._pushArrow(ordered.map(x => this.addNode(x, y, z)), direction);
+    },
+    // Vertical-in-plane arrow over consecutive y cells at (x, z). Tail→head:
+    // for 'up' the head is the lowest y, for 'down' the highest.
+    colArrow(ys, x, z, direction) {
+      const ordered = direction === 'up' ? [...ys].sort((a, b) => b - a) : [...ys].sort((a, b) => a - b);
+      this._pushArrow(ordered.map(y => this.addNode(x, y, z)), direction);
+    },
+    // Layer-axis arrow occupying the z-edge (x,y,zTail)-(x,y,zHead).
+    verticalSpan(x, y, zTail, zHead, direction) {
+      this._pushArrow([this.addNode(x, y, zTail), this.addNode(x, y, zHead)], direction);
+    },
+    // In-plane connectivity: x- and y-edges between adjacent nodes of the
+    // same layer. Never gameplay-relevant (edges only matter when blocked),
+    // exactly like the 2D tiers' weave(); both axes are woven because 3D
+    // layers may consist of column arrows with no row edges of their own.
+    weaveLayers() {
+      for (const [id, p] of this._nodes) {
+        const below = nid3(p.x, p.y + 1, p.z);
+        if (this._nodes.has(below)) this.addEdge(id, below);
+        const right = nid3(p.x + 1, p.y, p.z);
+        if (this._nodes.has(right)) this.addEdge(id, right);
+      }
+    },
+    build(meta) {
+      const nm = this._nodes;
+      return {
+        number: this.number, name: this.name, difficulty: this.difficulty,
+        definitionJson: {
+          nodes: [...nm.entries()].map(([id, p]) => ({ id, x: p.x, y: p.y, z: p.z })),
+          edges: [...this._edges.entries()].map(([id, e]) => ({
+            id, fromNodeId: e.from, toNodeId: e.to,
+            direction: dirBetween(nm.get(e.from), nm.get(e.to)),
+          })),
+          arrows: this._arrows.map(a => ({ ...a })),
+          blockedEdges: [],
+          metadata: { difficulty: this.difficulty, timeLimit: meta.t, maxMoves: meta.m,
+            generationType: '3d', seed: null },
+        },
+      };
+    },
+  };
+}
+
+// Level 21 — two 5×4 layers, 20 arrows. Introduction to spanning verticals:
+// each vertical occupies one cell on BOTH layers (tapping it frees two cells
+// at once) and exits immediately; four planar arrows point INTO a vertical's
+// column and are blocked until it (and the outer arrows beyond it) escape.
+function build3DLevel21() {
+  const b = Builder3D(21, 'Level 21', 'hard');
+  // Vertical spans at column x=2 (heads alternate above/below).
+  b.verticalSpan(2, 0, 1, 0, 'above');
+  b.verticalSpan(2, 1, 0, 1, 'below');
+  b.verticalSpan(2, 2, 1, 0, 'above');
+  b.verticalSpan(2, 3, 0, 1, 'below');
+  // Layer 0 (top): rows around the vertical column.
+  b.rowArrow([0, 1], 0, 0, 'left'); b.rowArrow([3, 4], 0, 0, 'right');
+  b.rowArrow([0, 1], 1, 0, 'right'); b.rowArrow([3, 4], 1, 0, 'right'); // [0,1]→ waits on V@x2 then [3,4]→
+  b.rowArrow([0, 1], 2, 0, 'left'); b.rowArrow([3, 4], 2, 0, 'left');   // [3,4]← waits on V@x2 then [0,1]←
+  b.rowArrow([0, 1], 3, 0, 'left'); b.rowArrow([3, 4], 3, 0, 'right');
+  // Layer 1 (bottom).
+  b.rowArrow([0, 1], 0, 1, 'left'); b.rowArrow([3, 4], 0, 1, 'right');
+  b.rowArrow([0, 1], 1, 1, 'left'); b.rowArrow([3, 4], 1, 1, 'left');   // [3,4]← waits on V@x2 then [0,1]←
+  b.rowArrow([0, 1], 2, 1, 'right'); b.rowArrow([3, 4], 2, 1, 'right'); // [0,1]→ waits on V@x2 then [3,4]→
+  b.rowArrow([0, 1], 3, 1, 'left'); b.rowArrow([3, 4], 3, 1, 'right');
+  b.weaveLayers();
+  return b.build({ t: 50, m: 260 });
+}
+
+// Level 22 — three 5×4 layers, 28 arrows. Verticals span adjacent layers and
+// their head sweeps cross the remaining layer: V1 (top↔mid, head down) must
+// wait for the bottom cell beneath it; V2 (bottom↔mid, head up) for the top
+// cell above it; V3/V4 likewise; several planar arrows point into vertical
+// columns, so dependencies cross layers in both directions.
+function build3DLevel22() {
+  const b = Builder3D(22, 'Level 22', 'hard');
+  // Vertical spans.
+  b.verticalSpan(2, 0, 0, 1, 'below');  // V1: blocked by (2,0,2)
+  b.verticalSpan(2, 3, 2, 1, 'above');  // V2: blocked by (2,3,0)
+  b.verticalSpan(0, 2, 0, 1, 'below');  // V3: blocked by (0,2,2)
+  b.verticalSpan(4, 1, 2, 1, 'above');  // V4: blocked by (4,1,0)
+  // Layer 0 (top). Carved: (2,0), (0,2).
+  b.rowArrow([0, 1], 0, 0, 'left'); b.rowArrow([3, 4], 0, 0, 'right');
+  b.rowArrow([0, 1, 2], 1, 0, 'left'); b.rowArrow([3, 4], 1, 0, 'right');
+  b.rowArrow([1, 2], 2, 0, 'left'); b.rowArrow([3, 4], 2, 0, 'right');   // [1,2]← waits on V3
+  b.rowArrow([0, 1], 3, 0, 'left'); b.rowArrow([2, 3, 4], 3, 0, 'right');
+  // Layer 1 (middle). Carved: (2,0), (2,3), (0,2), (4,1).
+  b.rowArrow([0, 1], 0, 1, 'left'); b.rowArrow([3, 4], 0, 1, 'right');
+  b.rowArrow([0, 1], 1, 1, 'left'); b.rowArrow([2, 3], 1, 1, 'right');   // [2,3]→ waits on V4
+  b.rowArrow([1, 2], 2, 1, 'left'); b.rowArrow([3, 4], 2, 1, 'right');   // [1,2]← waits on V3
+  b.rowArrow([0, 1], 3, 1, 'left'); b.rowArrow([3, 4], 3, 1, 'right');
+  // Layer 2 (bottom). Carved: (2,3), (4,1).
+  b.rowArrow([0, 1, 2], 0, 2, 'left'); b.rowArrow([3, 4], 0, 2, 'right');
+  b.rowArrow([0, 1], 1, 2, 'left'); b.rowArrow([2, 3], 1, 2, 'right');   // [2,3]→ waits on V4
+  b.rowArrow([0, 1, 2], 2, 2, 'left'); b.rowArrow([3, 4], 2, 2, 'right');
+  b.rowArrow([0, 1], 3, 2, 'left'); b.rowArrow([3, 4], 3, 2, 'right');
+  b.weaveLayers();
+  return b.build({ t: 45, m: 280 });
+}
+
+// Level 23 — "Pyramid": four concentric stepped tiers, 2×2 (z0) / 4×4 (z1)
+// / 6×6 (z2) / 8×8 (z3), all centered on (3.5, 3.5) so the silhouette reads
+// as a ziggurat from any camera angle. The four center columns of tier z1
+// are spans down to tier z2 with heads pointing up — each blocked by an
+// apex cell, so the pyramid's core unlocks only after the apex is cleared.
+function build3DLevel23() {
+  const b = Builder3D(23, 'Level 23', 'hard');
+  // Apex (2×2 at x3-4, y3-4).
+  b.rowArrow([3, 4], 3, 0, 'right');
+  b.rowArrow([3, 4], 4, 0, 'left');
+  // Core spans (z1↔z2), heads at z1 pointing above → blocked by the apex.
+  b.verticalSpan(3, 3, 2, 1, 'above');
+  b.verticalSpan(4, 3, 2, 1, 'above');
+  b.verticalSpan(3, 4, 2, 1, 'above');
+  b.verticalSpan(4, 4, 2, 1, 'above');
+  // Tier z1 ring (4×4 at x2-5, y2-5, minus the 4 core cells).
+  b.colArrow([2, 3], 2, 1, 'up'); b.colArrow([4, 5], 2, 1, 'down');
+  b.colArrow([2, 3], 5, 1, 'up'); b.colArrow([4, 5], 5, 1, 'down');
+  b.rowArrow([3, 4], 2, 1, 'right');  // waits on col x5
+  b.rowArrow([3, 4], 5, 1, 'left');   // waits on col x2
+  // Tier z2 (6×6 at x1-6, y1-6, minus 4 core span tails and 2 z2↔z3 spans).
+  b.rowArrow([1, 2], 1, 2, 'left'); b.rowArrow([4, 5, 6], 1, 2, 'right');
+  b.rowArrow([1, 2, 3], 2, 2, 'left'); b.rowArrow([4, 5, 6], 2, 2, 'right');
+  b.rowArrow([1, 2], 3, 2, 'left'); b.rowArrow([5, 6], 3, 2, 'right');
+  b.rowArrow([1, 2], 4, 2, 'left'); b.rowArrow([5, 6], 4, 2, 'right');
+  b.rowArrow([1, 2, 3], 5, 2, 'left'); b.rowArrow([4, 5, 6], 5, 2, 'right');
+  b.rowArrow([1, 2, 3], 6, 2, 'left'); b.rowArrow([5, 6], 6, 2, 'right');
+  // Base tier z3 (8×8, minus 2 z2↔z3 span cells).
+  b.rowArrow([0, 1, 2, 3], 0, 3, 'left'); b.rowArrow([4, 5, 6, 7], 0, 3, 'right');
+  b.rowArrow([0, 1, 2], 1, 3, 'left'); b.rowArrow([4, 5, 6, 7], 1, 3, 'right');
+  b.rowArrow([0, 1, 2, 3], 2, 3, 'left'); b.rowArrow([4, 5, 6, 7], 2, 3, 'right');
+  b.rowArrow([0, 1, 2, 3], 3, 3, 'left'); b.rowArrow([4, 5, 6, 7], 3, 3, 'right');
+  b.rowArrow([0, 1, 2, 3], 4, 3, 'left'); b.rowArrow([4, 5, 6, 7], 4, 3, 'right');
+  b.rowArrow([0, 1, 2, 3], 5, 3, 'left'); b.rowArrow([4, 5, 6, 7], 5, 3, 'right');
+  b.rowArrow([0, 1, 2, 3], 6, 3, 'left'); b.rowArrow([5, 6, 7], 6, 3, 'right');
+  b.rowArrow([0, 1, 2, 3], 7, 3, 'left'); b.rowArrow([4, 5, 6, 7], 7, 3, 'right');
+  // Tier-linking spans z2↔z3 (heads at z2 pointing above exit through the
+  // empty air beside the smaller tiers — free, they exist for the shape's
+  // vertical silhouette and connectivity).
+  b.verticalSpan(3, 1, 3, 2, 'above');
+  b.verticalSpan(4, 6, 3, 2, 'above');
+  // Apex↔z1 connectivity (unclaimed z-edges).
+  b.addEdge(nid3(3, 3, 0), nid3(3, 3, 1));
+  b.addEdge(nid3(4, 4, 0), nid3(4, 4, 1));
+  b.weaveLayers();
+  return b.build({ t: 45, m: 300 });
+}
+
+// Level 24 — "Diamond" (octahedron): five concentric tiers, 2×2 (z0) /
+// 4×4 (z1) / 6×6 (z2) / 4×4 (z3) / 2×2 (z4), tapering out then back in so
+// the stack reads as a gem. The center column x2-3/y2-3 is a lattice of
+// spans: the left column chains top-tip → equator, the right column chains
+// bottom-tip → equator, and two equator rows point into them.
+function build3DLevel24() {
+  const b = Builder3D(24, 'Level 24', 'hard');
+  // Top tip (2×2 at x2-3, y2-3): left column planar, right column span tails.
+  b.colArrow([2, 3], 2, 0, 'up');
+  b.verticalSpan(3, 2, 0, 1, 'below');  // waits on the z2↔z3 span below it
+  b.verticalSpan(3, 3, 0, 1, 'below');
+  // Bottom tip: right column planar, left column span tails.
+  b.colArrow([2, 3], 3, 4, 'down');
+  b.verticalSpan(2, 2, 4, 3, 'above');  // waits on the z1↔z2 span above it
+  b.verticalSpan(2, 3, 4, 3, 'above');
+  // Upper-mid tier z1 (4×4 at x1-4): ring + center (left = z1↔z2 spans
+  // blocked by the top tip, right = the z0↔z1 span bottoms).
+  b.verticalSpan(2, 2, 2, 1, 'above');  // blocked by top tip (2,2,0)
+  b.verticalSpan(2, 3, 2, 1, 'above');  // blocked by top tip (2,3,0)
+  b.colArrow([1, 2], 1, 1, 'up'); b.colArrow([3, 4], 1, 1, 'down');
+  b.colArrow([1, 2], 4, 1, 'up'); b.colArrow([3, 4], 4, 1, 'down');
+  b.rowArrow([2, 3], 1, 1, 'right');  // waits on col x4
+  b.rowArrow([2, 3], 4, 1, 'left');   // waits on col x1
+  // Lower-mid tier z3: mirror (right = z2↔z3 spans blocked by bottom tip).
+  b.verticalSpan(3, 2, 2, 3, 'below');  // blocked by bottom tip (3,2,4)
+  b.verticalSpan(3, 3, 2, 3, 'below');  // blocked by bottom tip (3,3,4)
+  b.colArrow([1, 2], 1, 3, 'up'); b.colArrow([3, 4], 1, 3, 'down');
+  b.colArrow([1, 2], 4, 3, 'up'); b.colArrow([3, 4], 4, 3, 'down');
+  b.rowArrow([2, 3], 1, 3, 'right');
+  b.rowArrow([2, 3], 4, 3, 'left');
+  // Equator z2 (6×6 at x0-5, minus the 4 center span cells).
+  b.rowArrow([0, 1, 2], 0, 2, 'left'); b.rowArrow([3, 4, 5], 0, 2, 'right');
+  b.rowArrow([0, 1, 2], 1, 2, 'left'); b.rowArrow([3, 4, 5], 1, 2, 'right');
+  b.rowArrow([0, 1], 2, 2, 'right'); b.rowArrow([4, 5], 2, 2, 'right');  // [0,1]→ threads the span lattice
+  b.rowArrow([0, 1], 3, 2, 'left'); b.rowArrow([4, 5], 3, 2, 'left');    // [4,5]← threads it the other way
+  b.rowArrow([0, 1, 2], 4, 2, 'left'); b.rowArrow([3, 4, 5], 4, 2, 'right');
+  b.rowArrow([0, 1, 2], 5, 2, 'left'); b.rowArrow([3, 4, 5], 5, 2, 'right');
+  b.weaveLayers();
+  return b.build({ t: 45, m: 320 });
+}
+
+// Level 25 — "Hourglass": five tiers 5×5 (z0) / 3×3 (z1) / 1×1 (z2) /
+// 3×3 (z3) / 5×5 (z4) — a true single-cell waist at the center. The whole
+// x=2 center column is spans: A/E rise out of the top cone, W threads the
+// one-cell neck (blocked by G beneath it), F/B drop out of the bottom cone,
+// and one row on each outer face points into the column and must wait.
+function build3DLevel25() {
+  const b = Builder3D(25, 'Level 25', 'hard');
+  // Center-column spans.
+  b.verticalSpan(2, 1, 1, 0, 'above');  // A: exits up out of the top cone
+  b.verticalSpan(2, 3, 1, 0, 'above');  // E: exits up out of the top cone
+  b.verticalSpan(2, 2, 1, 2, 'below');  // W: threads the waist, waits on G
+  b.verticalSpan(2, 2, 3, 4, 'below');  // G: exits down, frees the neck
+  b.verticalSpan(2, 1, 3, 4, 'below');  // F: exits down out of the bottom cone
+  b.verticalSpan(2, 3, 3, 4, 'below');  // B: exits down out of the bottom cone
+  // Top 5×5 (minus (2,1) and (2,3) = A/E tops).
+  b.rowArrow([0, 1, 2], 0, 0, 'left'); b.rowArrow([3, 4], 0, 0, 'right');
+  b.rowArrow([0, 1], 1, 0, 'left'); b.rowArrow([3, 4], 1, 0, 'left');   // [3,4]← waits on A
+  b.rowArrow([0, 1], 2, 0, 'left'); b.rowArrow([2, 3, 4], 2, 0, 'right');
+  b.rowArrow([0, 1], 3, 0, 'left'); b.rowArrow([3, 4], 3, 0, 'right');
+  b.rowArrow([0, 1, 2], 4, 0, 'left'); b.rowArrow([3, 4], 4, 0, 'right');
+  // Waist cones (3×3 at x1-3, y1-3; the x=2 column is all span cells).
+  b.colArrow([1, 2, 3], 1, 1, 'down'); b.colArrow([1, 2, 3], 3, 1, 'up');
+  b.colArrow([1, 2, 3], 1, 3, 'up'); b.colArrow([1, 2, 3], 3, 3, 'down');
+  // Bottom 5×5 (minus (2,1) and (2,3) = F/B bottoms).
+  b.rowArrow([0, 1, 2], 0, 4, 'left'); b.rowArrow([3, 4], 0, 4, 'right');
+  b.rowArrow([0, 1], 1, 4, 'left'); b.rowArrow([3, 4], 1, 4, 'left');   // [3,4]← waits on F
+  b.rowArrow([0, 1], 2, 4, 'left'); b.rowArrow([3, 4], 2, 4, 'right');  // (2,2,4) is G's exit cell
+  b.rowArrow([0, 1], 3, 4, 'left'); b.rowArrow([3, 4], 3, 4, 'right');
+  b.rowArrow([0, 1, 2], 4, 4, 'left'); b.rowArrow([3, 4], 4, 4, 'right');
+  // Neck connectivity: the waist cell links down to G's top (unclaimed).
+  b.addEdge(nid3(2, 2, 2), nid3(2, 2, 3));
+  b.weaveLayers();
+  return b.build({ t: 40, m: 340 });
+}
+
+function build3DLevels() {
+  return [
+    build3DLevel21(), build3DLevel22(), build3DLevel23(),
+    build3DLevel24(), build3DLevel25(),
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Validation (unchanged logic)
 // ---------------------------------------------------------------------------
 function coveredNodes(dj, arrow, byId) {
@@ -721,11 +1020,11 @@ function coveredNodes(dj, arrow, byId) {
 }
 function indexDj(dj) {
   const nodes = {}, edges = {}, byCoord = {};
-  for (const n of dj.nodes) { nodes[n.id] = n; byCoord[`${n.x},${n.y}`] = n.id; }
+  for (const n of dj.nodes) { nodes[n.id] = n; byCoord[`${n.x},${n.y},${zOf(n)}`] = n.id; }
   for (const e of dj.edges) edges[e.id] = e;
   return { nodes, edges, byCoord };
 }
-function nodeAtCoord(byId, x, y) { return byId.byCoord[`${x},${y}`] || null; }
+function nodeAtCoord(byId, x, y, z = 0) { return byId.byCoord[`${x},${y},${z}`] || null; }
 function edgeBetween(byId, a, b) {
   for (const e of Object.values(byId.edges)) {
     if ((e.fromNodeId === a && e.toNodeId === b) || (e.fromNodeId === b && e.toNodeId === a)) return e;
@@ -738,12 +1037,12 @@ function canExit(dj, byId, arrow, activeById, blockedSet) {
     if (id === arrow.id) continue;
     for (const n of coveredNodes(dj, activeById[id], byId)) blocker.add(n);
   }
-  const [dx, dy] = DELTA[arrow.direction];
+  const [dx, dy, dz = 0] = DELTA[arrow.direction];
   // Sweep from the head only (mirrors the Dart Phase 12.1 head-only resolver).
   let cur = arrow.endNodeId;
   while (true) {
     const cn = byId.nodes[cur];
-    const nextId = nodeAtCoord(byId, cn.x + dx, cn.y + dy);
+    const nextId = nodeAtCoord(byId, cn.x + dx, cn.y + dy, zOf(cn) + dz);
     if (nextId === null) break; // board boundary
     const e = edgeBetween(byId, cur, nextId);
     if (e && blockedSet.has(e.id)) return false;
@@ -805,26 +1104,30 @@ function structureErrors(dj) {
     if (arrowIds.has(a.id)) errs.push('dup arrow ' + a.id); arrowIds.add(a.id);
     if (!nodeIds.has(a.startNodeId) || !nodeIds.has(a.endNodeId)) errs.push('arrow node missing ' + a.id);
     for (const eId of a.occupiedEdges) if (!edgeIds.has(eId)) errs.push('arrow edge missing ' + a.id + ' ' + eId);
-    if (!a.occupiedEdges || a.occupiedEdges.length < 1) errs.push('arrow has no edges ' + a.id);
-    const head = byId.nodes[a.endNodeId]; const [dx, dy] = DELTA[a.direction] || [0, 0];
-    if (head) {
+    // Every arrow (planar or vertical) must occupy at least one edge — i.e.
+    // at least two nodes. A one-node arrow renders as a floating dot.
+    const hasEdges = a.occupiedEdges && a.occupiedEdges.length >= 1;
+    if (!hasEdges) errs.push('arrow has no edges ' + a.id);
+    const head = byId.nodes[a.endNodeId]; const [dx, dy, dz = 0] = DELTA[a.direction] || [0, 0, 0];
+    if (head && hasEdges) {
       let behind = false;
       for (const eId of a.occupiedEdges) {
         const e = byId.edges[eId]; if (!e) continue;
         const otherId = e.fromNodeId === a.endNodeId ? e.toNodeId : e.toNodeId === a.endNodeId ? e.fromNodeId : null;
         if (!otherId) continue;
         const o = byId.nodes[otherId];
-        if (o && o.x === head.x - dx && o.y === head.y - dy) behind = true;
+        if (o && o.x === head.x - dx && o.y === head.y - dy && zOf(o) === zOf(head) - dz) behind = true;
       }
       if (!behind) errs.push('arrow head not at exit end ' + a.id);
     }
     // Cycle check: N edges over a simple path span N+1 distinct nodes.
+    // (Only meaningful for arrows with a body; a single-node arrow has none.)
     const bodyNodes = new Set();
     for (const eId of a.occupiedEdges) {
       const e = byId.edges[eId]; if (!e) continue;
       bodyNodes.add(e.fromNodeId); bodyNodes.add(e.toNodeId);
     }
-    if (a.occupiedEdges.length >= bodyNodes.size) errs.push('arrow body forms a cycle ' + a.id);
+    if (hasEdges && a.occupiedEdges.length >= bodyNodes.size) errs.push('arrow body forms a cycle ' + a.id);
     // Self-intersection check: head sweep must not hit own body.
     const head2 = byId.nodes[a.endNodeId];
     if (head2) {
@@ -834,13 +1137,13 @@ function structureErrors(dj) {
         body2.add(e.fromNodeId); body2.add(e.toNodeId);
       }
       body2.delete(a.endNodeId);
-      const [dx2, dy2] = DELTA[a.direction] || [0, 0];
-      let cx2 = head2.x + dx2, cy2 = head2.y + dy2;
+      const [dx2, dy2, dz2 = 0] = DELTA[a.direction] || [0, 0, 0];
+      let cx2 = head2.x + dx2, cy2 = head2.y + dy2, cz2 = zOf(head2) + dz2;
       while (true) {
-        const nId2 = nodeAtCoord(byId, cx2, cy2);
+        const nId2 = nodeAtCoord(byId, cx2, cy2, cz2);
         if (!nId2) break;
         if (body2.has(nId2)) { errs.push('arrow head sweep self-intersects own body at ' + nId2 + ' ' + a.id); break; }
-        cx2 += dx2; cy2 += dy2;
+        cx2 += dx2; cy2 += dy2; cz2 += dz2;
       }
     }
   }
@@ -866,13 +1169,13 @@ function hasSelfIntersectingArrow(dj) {
       body.add(e.fromNodeId); body.add(e.toNodeId);
     }
     body.delete(a.endNodeId);
-    const [dx, dy] = DELTA[a.direction] || [0, 0];
-    let cx = head.x + dx, cy = head.y + dy;
+    const [dx, dy, dz = 0] = DELTA[a.direction] || [0, 0, 0];
+    let cx = head.x + dx, cy = head.y + dy, cz = zOf(head) + dz;
     while (true) {
-      const nId = nodeAtCoord(byId, cx, cy);
+      const nId = nodeAtCoord(byId, cx, cy, cz);
       if (!nId) break;
       if (body.has(nId)) return true;
-      cx += dx; cy += dy;
+      cx += dx; cy += dy; cz += dz;
     }
   }
   return false;
@@ -891,12 +1194,13 @@ function hasInteriorGapExit(dj) {
   for (const arrow of dj.arrows) {
     const head = byId.nodes[arrow.endNodeId];
     if (!head) continue;
-    const [dx, dy] = DELTA[arrow.direction];
+    const [dx, dy, dz = 0] = DELTA[arrow.direction];
+    if (dz !== 0) continue; // vertical arrows sweep the z axis, not this plane
     let cx = head.x, cy = head.y;
     while (true) {
       cx += dx; cy += dy;
       if (cx < minX || cx > maxX || cy < minY || cy > maxY) break; // true boundary
-      if (!nodeAtCoord(byId, cx, cy)) return true; // interior gap
+      if (!nodeAtCoord(byId, cx, cy, zOf(head))) return true; // interior gap
     }
   }
   return false;
@@ -932,6 +1236,35 @@ function hasRealInteriorGapExit(dj) {
   return false;
 }
 
+// 3D-aware real-gap check for multi-layer levels. Sweeps in full (dx,dy,dz)
+// with a 3-axis bounding box, and — like hasRealInteriorGapExit — only flags
+// a defect when the sweep crosses at least one empty in-bbox coordinate and
+// THEN reaches an actual node (a hidden blocker the resolver would skip).
+// Empty space past a smaller layer's silhouette (pyramid/diamond/hourglass
+// shapes) is a legitimate part of the figure, not a defect.
+function hasRealInteriorGapExit3D(dj) {
+  const byId = indexDj(dj);
+  const xs = dj.nodes.map(n => n.x), ys = dj.nodes.map(n => n.y), zs = dj.nodes.map(zOf);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+  for (const arrow of dj.arrows) {
+    const head = byId.nodes[arrow.endNodeId];
+    if (!head) continue;
+    const [dx, dy, dz = 0] = DELTA[arrow.direction];
+    let cx = head.x, cy = head.y, cz = zOf(head), sawGap = false;
+    while (true) {
+      cx += dx; cy += dy; cz += dz;
+      if (cx < minX || cx > maxX || cy < minY || cy > maxY || cz < minZ || cz > maxZ) break;
+      const nId = nodeAtCoord(byId, cx, cy, cz);
+      if (!nId) { sawGap = true; continue; }
+      if (sawGap) return true;
+      break;
+    }
+  }
+  return false;
+}
+
 // Reverse any arrow whose head sweep exits through an interior gap so that its
 // head exits from the OTHER end instead. The body-behind-head invariant is
 // preserved by computing the new exit direction from the FIRST step of the
@@ -950,12 +1283,13 @@ function flipInteriorGapArrows(dj) {
   for (const arrow of dj.arrows) {
     const head = byId.nodes[arrow.endNodeId];
     if (!head) continue;
-    const [dx, dy] = DELTA[arrow.direction];
+    const [dx, dy, dz = 0] = DELTA[arrow.direction];
+    if (dz !== 0) continue; // vertical arrows sweep the z axis, not this plane
     let cx = head.x, cy = head.y, gap = false;
     while (true) {
       cx += dx; cy += dy;
       if (cx < minX || cx > maxX || cy < minY || cy > maxY) break;
-      if (!nodeAtCoord(byId, cx, cy)) { gap = true; break; }
+      if (!nodeAtCoord(byId, cx, cy, zOf(head))) { gap = true; break; }
     }
     if (!gap) continue;
     // Compute new direction from the FIRST step of the original path.
@@ -1014,9 +1348,13 @@ function validateAll(levels) {
     // interior "gap" can be a legitimate part of the shape's own visible
     // outer edge, not an accidental hole. Random tiers (1-15) use the
     // blanket bbox check; figures use the figure-aware check (Phase 19) that
-    // only flags a gap when it hides a real blocker past it.
+    // only flags a gap when it hides a real blocker past it; 3D levels (21+)
+    // use the z-aware equivalent of the same real-gap semantics.
     const isFigure = dj.metadata && dj.metadata.generationType === 'figure';
-    const gapExit = isFigure ? hasRealInteriorGapExit(dj) : hasInteriorGapExit(dj);
+    const is3D = dj.metadata && dj.metadata.generationType === '3d';
+    const gapExit =
+      is3D ? hasRealInteriorGapExit3D(dj)
+        : isFigure ? hasRealInteriorGapExit(dj) : hasInteriorGapExit(dj);
     const components = connectedComponents(dj), n = dj.arrows.length;
     if (arrowsByTier[diff]) arrowsByTier[diff].push(n);
     const band = DENSITY[diff]; let densityErr = '';
@@ -1038,6 +1376,7 @@ function validateAll(levels) {
       ' shared=' + (shared ? JSON.stringify(shared) : '-') +
       ' gapExit=' + (gapExit ? 'Y' : '-') +
       ' solvable=' + sv +
+      (is3D ? ' layers=' + new Set(dj.nodes.map(zOf)).size : '') +
       (components !== 1 ? ' DISCONNECTED(' + components + ')' : '') +
       (densityErr ? ' ' + densityErr.toUpperCase() : '') +
       (se.length ? ' STRUCT_ERR=' + JSON.stringify(se) : '')
@@ -1100,9 +1439,10 @@ function main() {
   const args = process.argv.slice(2);
   const generate = args.includes('--generate');
   const generateFigures = args.includes('--generate-figures');
-  const modeCount = [generate, generateFigures, args.includes('--validate-only')].filter(Boolean).length;
+  const generate3D = args.includes('--generate-3d');
+  const modeCount = [generate, generateFigures, generate3D, args.includes('--validate-only')].filter(Boolean).length;
   if (modeCount > 1) {
-    console.error('Pass exactly one of --generate, --generate-figures, --validate-only.');
+    console.error('Pass exactly one of --generate, --generate-figures, --generate-3d, --validate-only.');
     process.exitCode = 2; return;
   }
   if (!selfTest()) return;
@@ -1130,6 +1470,25 @@ function main() {
     const figures = buildFigureLevels();
     console.log();
     const levels = [...base, ...figures];
+    const allOk = validateAll(levels);
+    if (allOk) {
+      fs.writeFileSync(ASSET, JSON.stringify({ levels }, null, 2) + '\n');
+      console.log('\nWROTE', ASSET);
+    } else {
+      console.log('\nNOT WRITTEN — fix issues first'); process.exitCode = 1;
+    }
+    return;
+  }
+  if (generate3D) {
+    console.log('MODE: --generate-3d (regenerates levels 21-25 only; 1-20 left byte-identical)\n');
+    const parsed = JSON.parse(fs.readFileSync(ASSET, 'utf8'));
+    const base = (parsed.levels || []).filter(l => l.number <= 20);
+    if (base.length !== 20) {
+      console.log(`Expected 20 base levels (1-20) on disk, found ${base.length}`); process.exitCode = 1; return;
+    }
+    const threeD = build3DLevels();
+    console.log();
+    const levels = [...base, ...threeD];
     const allOk = validateAll(levels);
     if (allOk) {
       fs.writeFileSync(ASSET, JSON.stringify({ levels }, null, 2) + '\n');

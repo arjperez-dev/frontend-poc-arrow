@@ -1,4 +1,4 @@
-import 'direction.dart';
+import 'move_direction.dart';
 
 class ArrowPath {
   const ArrowPath({
@@ -19,7 +19,7 @@ class ArrowPath {
 
   final String startNodeId;
   final String endNodeId;
-  final Direction direction;
+  final MoveDirection direction;
   final bool isEscaped;
 
   bool get isActive => !isEscaped;
@@ -31,7 +31,7 @@ class ArrowPath {
   ArrowPath copyWith({
     List<String>? occupiedEdgeIds,
     String? endNodeId,
-    Direction? direction,
+    MoveDirection? direction,
     bool? isEscaped,
   }) {
     return ArrowPath(

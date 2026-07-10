@@ -5,20 +5,25 @@ import 'package:flutter/material.dart';
 import '../game_ui_keys.dart';
 import '../../domain/arrow_path.dart';
 import '../../domain/game_session.dart';
-import '../../domain/graph_node.dart';
 import 'board_reset_view_button.dart';
-import 'graph_board_hit_tester.dart';
-import 'graph_board_layout.dart';
-import 'graph_board_painter.dart';
+import 'graph_3d_board_painter.dart';
+import 'graph_3d_hit_tester.dart';
+import 'graph_3d_projector.dart';
 
-/// Renders the graph board and animates already-resolved attempts.
+/// Interactive true-3D board for multi-layer levels.
 ///
-/// Game rules live in domain/application. This widget only *renders* the result:
-/// when an arrow has just become escaped it plays a slide-out animation of the
-/// whole arrow shape in its head direction; when an arrow has just collided it
-/// plays a short shake + the collision flash colour. No rule logic here.
-class GraphBoard extends StatefulWidget {
-  const GraphBoard({
+/// - One-finger drag orbits the camera (yaw) and tilts it (pitch, clamped so
+///   the scene never flips); pinch zooms. Tap activates an arrow through
+///   [Graph3DHitTester] using the exact same projector the painter draws
+///   with.
+/// - The camera starts tilted so the level reads as 3D at first paint.
+/// - Same external contract as [GraphBoard]: rules live in
+///   domain/application; exit slide, collision shake, and flash are
+///   presentation of already-resolved state. `onInteractionActiveChanged`
+///   reports touch activity so the page scroll can lock while orbiting
+///   (orbit drags must not scroll the page — see GraphBoard's doc comment).
+class Graph3DBoard extends StatefulWidget {
+  const Graph3DBoard({
     required this.session,
     required this.onArrowActivated,
     this.lastActivatedArrowId,
@@ -31,34 +36,36 @@ class GraphBoard extends StatefulWidget {
   final GameSession session;
   final ValueChanged<String> onArrowActivated;
   final String? lastActivatedArrowId;
-
-  /// Arrow drawn in the collision-error colour for the flash duration.
   final String? flashingArrowId;
 
-  /// When false (tests), no tickers/animations are started; the final resolved
-  /// state is rendered immediately.
+  /// When false (tests), no tickers/animations are started; resolved state
+  /// renders immediately.
   final bool animate;
 
-  /// Called with `true` while at least one finger is touching the board, and
-  /// `false` once all of them lift. An ancestor scroll view should pause its
-  /// own scrolling while this is `true` — otherwise a pinch gesture started
-  /// on the board can be partly "stolen" by the ancestor's drag recognizer
-  /// before the second finger lands, making pinch-zoom feel unresponsive.
   final ValueChanged<bool>? onInteractionActiveChanged;
 
   @override
-  State<GraphBoard> createState() => _GraphBoardState();
+  State<Graph3DBoard> createState() => _Graph3DBoardState();
 }
 
-class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
+class _Graph3DBoardState extends State<Graph3DBoard>
+    with TickerProviderStateMixin {
+  static const double _initialYaw = 25 * math.pi / 180;
+  static const double _initialPitch = 30 * math.pi / 180;
+  static const double _maxPitch = 78 * math.pi / 180;
+
+  double _yaw = _initialYaw;
+  double _pitch = _initialPitch;
+  double _zoom = 1.0;
+
+  /// Zoom at the start of the current scale gesture (pinch is relative).
+  double _zoomAtGestureStart = 1.0;
+
   AnimationController? _exitController;
   AnimationController? _shakeController;
   ArrowPath? _exitingArrow;
   Set<String> _activeIds = const {};
   String? _shakeArrowId;
-
-  /// Pan/zoom transform for dense boards. Reset via the reset-view button.
-  final TransformationController _viewController = TransformationController();
 
   int _activePointers = 0;
 
@@ -93,7 +100,7 @@ class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
   }
 
   @override
-  void didUpdateWidget(covariant GraphBoard oldWidget) {
+  void didUpdateWidget(covariant Graph3DBoard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.animate) {
       _activeIds = widget.session.activeArrows.map((a) => a.id).toSet();
@@ -101,12 +108,9 @@ class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
     }
 
     final newActive = widget.session.activeArrows.map((a) => a.id).toSet();
-
-    // An arrow that just transitioned from active -> escaped: animate its exit.
     final escapedNow = _activeIds.difference(newActive);
     if (escapedNow.isNotEmpty) {
-      final id = escapedNow.first;
-      final arrow = widget.session.arrowById(id);
+      final arrow = widget.session.arrowById(escapedNow.first);
       if (arrow != null) {
         _exitingArrow = arrow;
         _exitController?.forward(from: 0);
@@ -114,7 +118,6 @@ class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
     }
     _activeIds = newActive;
 
-    // A new collision flash target: play a short shake.
     if (widget.flashingArrowId != null &&
         widget.flashingArrowId != oldWidget.flashingArrowId) {
       _shakeArrowId = widget.flashingArrowId;
@@ -126,48 +129,66 @@ class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
   void dispose() {
     _exitController?.dispose();
     _shakeController?.dispose();
-    _viewController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final layerCount = widget.session.level.boardGraph.layers.length;
     final activeArrowCount = widget.session.activeArrows.length;
 
     return Semantics(
       label:
-          'Graph board with ${widget.session.level.boardGraph.nodes.length} nodes and $activeArrowCount active arrows',
+          '3D graph board with $layerCount layers, ${widget.session.level.boardGraph.nodes.length} nodes and $activeArrowCount active arrows',
       child: AspectRatio(
-        // Match the board's box to the level's own bounding-box shape
-        // (clamped) instead of always forcing a square — a wide or tall
-        // level gets the extra width/height it actually needs, instead of
-        // wasting screen space on the unused axis while squeezing cells on
-        // the binding one.
-        aspectRatio: _boardAspectRatio(widget.session.level.boardGraph.nodes),
+        aspectRatio: 1.0,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
-            final layout = GraphBoardLayout.fromGraph(
-              graph: widget.session.level.boardGraph,
-              size: size,
-            );
 
             final board = GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTapUp: (details) {
-                final arrowId = const GraphBoardHitTester().findArrowAt(
+                final projector = Graph3DProjector(
+                  graph: widget.session.level.boardGraph,
+                  yaw: _yaw,
+                  pitch: _pitch,
+                  zoom: _zoom,
+                  size: size,
+                );
+                final arrowId = const Graph3DHitTester().findArrowAt(
                   session: widget.session,
-                  layout: layout,
+                  projector: projector,
                   position: details.localPosition,
                 );
                 if (arrowId != null) {
                   widget.onArrowActivated(arrowId);
                 }
               },
+              onScaleStart: (_) => _zoomAtGestureStart = _zoom,
+              onScaleUpdate: (details) {
+                setState(() {
+                  if (details.pointerCount >= 2) {
+                    _zoom = (_zoomAtGestureStart * details.scale).clamp(
+                      0.5,
+                      3.0,
+                    );
+                  }
+                  _yaw += details.focalPointDelta.dx * 0.008;
+                  _pitch = (_pitch + details.focalPointDelta.dy * 0.008).clamp(
+                    -_maxPitch,
+                    _maxPitch,
+                  );
+                });
+              },
               child: CustomPaint(
                 key: GameUiKeys.gameBoard,
-                painter: GraphBoardPainter(
+                size: size,
+                painter: Graph3DBoardPainter(
                   session: widget.session,
+                  yaw: _yaw,
+                  pitch: _pitch,
+                  zoom: _zoom,
                   lastActivatedArrowId: widget.lastActivatedArrowId,
                   flashingArrowId: widget.flashingArrowId,
                   exitingArrow: _exitingArrow,
@@ -178,8 +199,6 @@ class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
               ),
             );
 
-            // Pan/zoom for dense boards. The tap GestureDetector lives inside
-            // the transformed child, so hit testing stays in child coordinates.
             return Listener(
               onPointerDown: (_) => _onPointerCountChanged(_activePointers + 1),
               onPointerUp: (_) => _onPointerCountChanged(_activePointers - 1),
@@ -187,21 +206,13 @@ class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
                   _onPointerCountChanged(_activePointers - 1),
               child: Stack(
                 children: [
-                  Positioned.fill(
-                    child: InteractiveViewer(
-                      transformationController: _viewController,
-                      minScale: 1.0,
-                      maxScale: 4.0,
-                      boundaryMargin: const EdgeInsets.all(24),
-                      child: board,
-                    ),
-                  ),
+                  Positioned.fill(child: board),
                   Positioned(
                     top: 8,
                     right: 8,
                     child: BoardResetViewButton(
                       onPressed: _resetView,
-                      icon: Icons.center_focus_strong,
+                      icon: Icons.threed_rotation,
                     ),
                   ),
                 ],
@@ -223,20 +234,10 @@ class _GraphBoardState extends State<GraphBoard> with TickerProviderStateMixin {
   }
 
   void _resetView() {
-    _viewController.value = Matrix4.identity();
+    setState(() {
+      _yaw = _initialYaw;
+      _pitch = _initialPitch;
+      _zoom = 1.0;
+    });
   }
-}
-
-/// Width/height of the level's node bounding box, clamped so the board box
-/// never becomes extreme. Levels close to square (most of 1-15) are
-/// unaffected (clamp has no effect near 1.0); markedly wide or tall levels
-/// get a matching wide/tall board box instead of being squeezed into a
-/// square.
-double _boardAspectRatio(List<GraphNode> nodes) {
-  if (nodes.isEmpty) return 1;
-  final xs = nodes.map((node) => node.coordinate.x);
-  final ys = nodes.map((node) => node.coordinate.y);
-  final width = math.max(1, xs.reduce(math.max) - xs.reduce(math.min));
-  final height = math.max(1, ys.reduce(math.max) - ys.reduce(math.min));
-  return (width / height).clamp(0.6, 1.6);
 }
