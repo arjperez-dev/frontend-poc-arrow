@@ -1,16 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart';
 
-import '../../../core/network/network_dependencies.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../progress/infrastructure/api_remote_level_repository.dart';
 import '../domain/leaderboard_entry.dart';
 import '../infrastructure/leaderboard_dependencies.dart';
 
+typedef LoadLeaderboardForLevel =
+    Future<List<LeaderboardEntry>> Function(int levelNumber);
+
 class LeaderboardScreen extends StatefulWidget {
-  const LeaderboardScreen({required this.levelNumber, super.key});
+  const LeaderboardScreen({
+    required this.levelNumber,
+    this.loadEntries,
+    super.key,
+  });
 
   final int? levelNumber;
+
+  /// Test seam (same pattern as GameScreen's injectable use cases). When
+  /// null, the production use case is created via [LeaderboardDependencies].
+  final LoadLeaderboardForLevel? loadEntries;
 
   @override
   State<LeaderboardScreen> createState() => _LeaderboardScreenState();
@@ -24,17 +33,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     if (levelNumber == null) {
       return const <LeaderboardEntry>[];
     }
-    final apiClient = await NetworkDependencies.createApiClient();
-    final levelIdsByNumber = await ApiRemoteLevelRepository(
-      apiClient,
-    ).getLevelIdsByNumber();
-    final levelId = levelIdsByNumber[levelNumber];
-    if (levelId == null) {
-      return const <LeaderboardEntry>[];
-    }
-    return (await LeaderboardDependencies.createGetLeaderboardUseCase())(
-      levelId,
-    );
+    final loadEntries = widget.loadEntries ??
+        (await LeaderboardDependencies
+                .createGetLeaderboardForLevelNumberUseCase())
+            .call;
+    return loadEntries(levelNumber);
   }
 
   @override
