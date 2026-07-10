@@ -344,6 +344,63 @@ void main() {
     },
   );
 
+  testWidgets(
+    'should_observe_completed_level_on_first_return_when_backing_out_fast_via_app_bar',
+    (tester) async {
+      final levels = await _loadRealManualLevels(tester);
+
+      // Fake save that completes on a delayed future — simulates a slow
+      // SharedPreferences read-modify-write racing against a fast pop.
+      Future<void> delayedSave({
+        required int levelNumber,
+        required int score,
+        required int moves,
+        required int timeSeconds,
+      }) => Future<void>.delayed(const Duration(milliseconds: 50));
+
+      var progressCalls = 0;
+      Future<LocalProgress> loadProgress() async {
+        progressCalls++;
+        // Reflect completion only once the save has actually settled.
+        if (progressCalls <= 1) {
+          return LocalProgress.initial().copyWith(lastUnlockedLevel: 1);
+        }
+        return LocalProgress.initial().copyWith(
+          completedLevelNumbers: {1},
+          lastUnlockedLevel: 2,
+        );
+      }
+
+      await tester.pumpWidget(
+        _TestManualLevelsApp(
+          levels: levels,
+          level1Override: _singleNodeExitLevel(),
+          loadProgress: loadProgress,
+          onSaveLevelCompletion: delayedSave,
+        ),
+      );
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.levelCard(1)));
+
+      await tester.tap(find.byKey(GameUiKeys.levelCard(1)));
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.gameBoard));
+
+      await tester.tapAt(_singleNodePosition(tester));
+      await tester.pump();
+      expect(find.byKey(GameUiKeys.victoryCard), findsOneWidget);
+
+      // Back out immediately via the app-bar back button — before the
+      // 50 ms delayed save would have settled on its own.
+      await tester.pageBack();
+      // Pump through the awaited completionSettled + the delayed save.
+      await tester.pump(const Duration(milliseconds: 100));
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.levelCard(1)));
+
+      // The level-selection screen's post-return progress read must observe
+      // the completed level on the first return.
+      expect(find.textContaining('Completed'), findsOneWidget);
+    },
+  );
+
   testWidgets('should_refresh_progress_when_returning_from_game', (
     tester,
   ) async {

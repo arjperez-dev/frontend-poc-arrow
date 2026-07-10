@@ -133,43 +133,59 @@ class _GameScreenState extends State<GameScreen> {
       );
     }
 
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final localizations = AppLocalizations.of(context);
-
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(controller.level?.name ?? localizations.loadingLevel),
-          ),
-          body: SafeArea(
-            child: switch (controller.loadState) {
-              GameScreenLoadState.loading => _LoadingState(
-                message: localizations.loadingLevel,
-              ),
-              GameScreenLoadState.notFound => _LevelNotFoundState(
-                onBackToLevels: _backToLevels,
-              ),
-              GameScreenLoadState.failed => _LevelNotFoundState(
-                onBackToLevels: _backToLevels,
-              ),
-              GameScreenLoadState.ready => _GameReadyView(
-                controller: controller,
-                animateBoard: widget.enableBoardAnimations,
-                onBackToLevels: _backToLevels,
-                onNextLevel: _openNextLevel,
-                onOpenLeaderboard: _openLeaderboard,
-                lockPageScroll: _lockPageScroll,
-                onBoardInteractionActiveChanged: (active) {
-                  if (active != _lockPageScroll) {
-                    setState(() => _lockPageScroll = active);
-                  }
-                },
-              ),
-            },
-          ),
-        );
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) {
+          return;
+        }
+        final navigator = Navigator.of(context);
+        await controller.completionSettled;
+        if (!mounted) {
+          return;
+        }
+        navigator.pop(result);
       },
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          final localizations = AppLocalizations.of(context);
+
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(
+                controller.level?.name ?? localizations.loadingLevel,
+              ),
+            ),
+            body: SafeArea(
+              child: switch (controller.loadState) {
+                GameScreenLoadState.loading => _LoadingState(
+                  message: localizations.loadingLevel,
+                ),
+                GameScreenLoadState.notFound => _LevelNotFoundState(
+                  onBackToLevels: _backToLevels,
+                ),
+                GameScreenLoadState.failed => _LevelNotFoundState(
+                  onBackToLevels: _backToLevels,
+                ),
+                GameScreenLoadState.ready => _GameReadyView(
+                  controller: controller,
+                  animateBoard: widget.enableBoardAnimations,
+                  onBackToLevels: _backToLevels,
+                  onNextLevel: _openNextLevel,
+                  onOpenLeaderboard: _openLeaderboard,
+                  lockPageScroll: _lockPageScroll,
+                  onBoardInteractionActiveChanged: (active) {
+                    if (active != _lockPageScroll) {
+                      setState(() => _lockPageScroll = active);
+                    }
+                  },
+                ),
+              },
+            ),
+          );
+        },
+      ),
     );
   }
 

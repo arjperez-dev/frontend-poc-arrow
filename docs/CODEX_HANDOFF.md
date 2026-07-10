@@ -9,7 +9,7 @@
 
 ## Completed Phase
 
-- Phase 8: Frontend Backend Integration.
+- Phase 23: Bug Fixes & Polish (Save-Race Hardening + Leaderboard Picker Coverage).
 
 Previous completed and merged phases:
 
@@ -1831,3 +1831,95 @@ levels, more complex than 21–22, shaped as recognizable figures.
 - Manual on-device validation pending: figures read as pyramid/diamond/
   hourglass under orbit; vertical arrows render as two-node pieces spanning
   layers; chains behave (e.g. 23's core waits for the apex).
+
+## Phase 23 — Bug Fixes & Polish (Save-Race Hardening + Leaderboard Picker Coverage) (2026-07-10)
+
+Closed the two follow-up items from the Phase 21.2 audit: a theoretical
+save/reload race on fast back-navigation, and missing widget-test coverage
+for `LeaderboardLevelPickerScreen`. Branch
+`feat/phase-23-bug-fixes-and-polish`. No gameplay, rendering, level-data,
+audio, auth, sync, or API changes; `backend-poc-arrow` untouched.
+
+### Task A — Save/Reload Race on Back-Button Exit
+
+**Root cause recap:** `GameScreenController.activateArrow` fires
+`unawaited(_saveCompletionOnce(...))` on the victory transition. The save is
+a `SharedPreferences` read-modify-write via `SaveLevelCompletionUseCase`.
+`LevelSelectionScreen._openLevel` awaits the pushed route's pop and then
+reloads progress. `GameScreen` had no `PopScope`/pop interception, so an
+extremely fast pop (system back or app-bar back) could resolve before the
+save's write landed, making the reload observe stale (not-yet-completed)
+progress for that one return. Self-correcting on the next visit; no data was
+ever lost — the save still completed, the reload is read-only.
+
+**Fix (Option 1 — chosen per the phase doc's stated preference):**
+`GameScreenController` gained `Future<void>? _pendingCompletionSave`,
+assigned inside `_saveCompletionOnce` around only the local
+`saveCompletion(...)` call (not the best-effort remote notify, which stays
+unawaited/best-effort), and a public `Future<void> get completionSettled =>
+_pendingCompletionSave ?? Future<void>.value()` — a no-op resolved future
+when no victory has occurred. `GameScreen`'s body is now wrapped in
+`PopScope(canPop: false, onPopInvokedWithResult: ...)`: on a pop attempt it
+captures `Navigator.of(context)` first (to avoid a
+`use_build_context_synchronously` lint after the following await), awaits
+`controller.completionSettled`, checks `mounted`, then calls
+`navigator.pop(result)`. This intercepts both the app-bar back arrow and the
+Android system back button (both route through the same pop). `dispose()`
+was not touched — the pending future is never awaited there.
+`_backToLevels`/`_openNextLevel` use `pushNamedAndRemoveUntil`/
+`pushReplacementNamed` respectively (not `pop`), so `PopScope` does not
+intercept them; they were already correct per the Phase 21.2 audit and
+remain unchanged.
+
+**Confirmed:** awaiting `completionSettled` is a no-op (immediately-resolved
+future) when no victory occurred — normal in-progress/failed-level back
+navigation is not stalled. `completionSettled`/`_pendingCompletionSave` are
+never awaited or read from `dispose()`.
+
+### Task B — `LeaderboardLevelPickerScreen` Widget Test Coverage
+
+New file `test/features/leaderboard/presentation/leaderboard_level_picker_screen_test.dart`,
+mirroring the `MaterialApp`/l10n harness pattern from
+`playable_game_ui_test.dart`. Four assertions, five tests:
+
+- **Render:** injects a small deterministic fake level list; asserts one
+  `GameUiKeys.levelCard(n)` per level with the level's name text.
+- **Tap → argument:** taps a level card; a fake `onGenerateRoute` captures
+  `RouteSettings.name`/`.arguments` for `AppRoutes.leaderboard` and asserts
+  the argument equals the tapped level's number (the exact regression the
+  Phase 21.2 fix depends on — a `null` argument was the original
+  leaderboard-empty bug).
+- **Empty/error branch:** asserts the localized `leaderboardUnavailable`
+  message and no cards, both when `loadLevels` returns an empty list and
+  when it throws.
+- **Loading branch:** pumps once without settling; asserts a
+  `CircularProgressIndicator` and no cards before the future completes.
+
+No production code changed for Task B (test-only, per the phase
+constraints); `LeaderboardLevelPickerScreen` itself was not modified.
+
+### Files Changed / Created
+
+- `lib/features/game/presentation/game_screen_controller.dart`
+- `lib/features/game/presentation/game_screen.dart`
+- `test/features/game/presentation/playable_game_ui_test.dart` (1 new test)
+- `test/features/leaderboard/presentation/leaderboard_level_picker_screen_test.dart` (new, 5 tests)
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 178/178 passed (132 pre-existing + 6 new: 1 Task A + 5
+  Task B).
+- `node tool/gen_levels.js --validate-only`: not applicable/not run (no
+  level files touched).
+
+### Limitations
+
+- Task A's regression test simulates the race with a 50 ms artificially
+  delayed fake save rather than a real timing race against actual
+  `SharedPreferences` I/O latency — this proves the await-before-pop
+  ordering is correct, not that the original race was ever observable on a
+  real device (the phase doc itself describes the original symptom as
+  "theoretical, negligible probability").
+- Manual on-device validation for this phase (and the long-standing pending
+  manual validation from prior phases) was not performed.

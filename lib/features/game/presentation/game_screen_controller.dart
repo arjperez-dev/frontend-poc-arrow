@@ -61,6 +61,7 @@ class GameScreenController extends ChangeNotifier {
   MovementOutcome? _lastOutcome;
   LevelBestResult? _bestResult;
   bool _completionSaved = false;
+  Future<void>? _pendingCompletionSave;
 
   /// Arrow id that should flash red on the board (collision feedback).
   String? _flashingArrowId;
@@ -92,6 +93,11 @@ class GameScreenController extends ChangeNotifier {
   LevelBestResult? get bestResult => _bestResult;
   String? get flashingArrowId => _flashingArrowId;
   GameAttemptTrace? get lastAttemptTrace => _lastAttemptTrace;
+
+  /// Resolves once the pending local completion save (if any) has settled.
+  /// A no-op (already-resolved future) when no victory has occurred yet.
+  Future<void> get completionSettled =>
+      _pendingCompletionSave ?? Future<void>.value();
 
   bool get isVictory => _session?.status == GameStatus.victory;
   bool get isGameOver => _session?.status == GameStatus.failed;
@@ -200,12 +206,14 @@ class GameScreenController extends ChangeNotifier {
     }
 
     _completionSaved = true;
-    await saveCompletion(
+    final localSave = saveCompletion(
       levelNumber: levelNumber,
       score: completedSession.score.value,
       moves: completedSession.movesCount,
       timeSeconds: completedSession.elapsedSeconds,
     );
+    _pendingCompletionSave = localSave;
+    await localSave;
     unawaited(_notifyRemoteCompletionBestEffort(completedSession, levelNumber));
     _bestResult = await _getBestLevelResult?.call(levelNumber);
     _safeNotify();
