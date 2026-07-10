@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import '../../domain/game_session.dart';
+import 'board_geometry.dart';
 import 'graph_3d_projector.dart';
 
 /// Resolves a tap on the 3D board to an arrow id, in screen space, through
@@ -39,7 +40,7 @@ class Graph3DHitTester {
           final from = projector.pointFor(nodes[i - 1]);
           final to = projector.pointFor(nodes[i]);
           if (from == null || to == null) continue;
-          if (_distanceToSegment(position, from.screen, to.screen) <= slop) {
+          if (distanceToSegment(position, from.screen, to.screen) <= slop) {
             hit = true;
             break;
           }
@@ -60,23 +61,5 @@ class Graph3DHitTester {
   /// radius must never reach halfway to a neighbouring node).
   double _hitSlopFor(double pixelScale) {
     return math.max(minHitSlop, math.min(maxHitSlop, pixelScale * 0.45));
-  }
-
-  double _distanceToSegment(Offset point, Offset start, Offset end) {
-    final segment = end - start;
-    final lengthSquared =
-        segment.dx * segment.dx + segment.dy * segment.dy;
-    if (lengthSquared == 0) {
-      return (point - start).distance;
-    }
-    final t = (((point.dx - start.dx) * segment.dx) +
-            ((point.dy - start.dy) * segment.dy)) /
-        lengthSquared;
-    final clamped = t.clamp(0.0, 1.0);
-    final projection = Offset(
-      start.dx + (segment.dx * clamped),
-      start.dy + (segment.dy * clamped),
-    );
-    return (point - projection).distance;
   }
 }

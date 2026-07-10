@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/arrow_path.dart';
 import '../../domain/game_session.dart';
+import 'arrow_head.dart';
+import 'board_style.dart';
 import 'graph_3d_projector.dart';
 
 /// Paints a multi-layer board through a [Graph3DProjector] camera.
@@ -49,8 +51,6 @@ class Graph3DBoardPainter extends CustomPainter {
   final String? shakeArrowId;
   final double shakeProgress;
 
-  static const Color _collisionColor = Color(0xFFFF4444);
-
   @override
   void paint(Canvas canvas, Size size) {
     final graph = session.level.boardGraph;
@@ -94,7 +94,8 @@ class Graph3DBoardPainter extends CustomPainter {
       final alpha = (edge.isBlocked ? 0.5 : 0.22) * fade(depth);
       final color = edge.isBlocked ? AppTheme.pastelAmber : AppTheme.mutedText;
       final width =
-          (edge.isBlocked ? 0.10 : 0.06) * math.min(from.pixelScale, to.pixelScale);
+          (edge.isBlocked ? 0.10 : 0.06) *
+          math.min(from.pixelScale, to.pixelScale);
       drawables.add(
         _Drawable(depth, (c) {
           c.drawLine(
@@ -128,7 +129,8 @@ class Graph3DBoardPainter extends CustomPainter {
               ..drawCircle(
                 p.screen,
                 math.max(3.0, p.pixelScale * 0.12),
-                Paint()..color = AppTheme.softText.withValues(alpha: 0.16 * dim),
+                Paint()
+                  ..color = AppTheme.softText.withValues(alpha: 0.16 * dim),
               )
               ..drawCircle(
                 p.screen,
@@ -145,7 +147,7 @@ class Graph3DBoardPainter extends CustomPainter {
       final head = projector.pointFor(arrow.endNodeId);
       if (head == null) continue;
       final isFlashing = arrow.id == flashingArrowId;
-      final color = isFlashing ? _collisionColor : _colorForArrow(arrow.id);
+      final color = isFlashing ? collisionFlashColor : arrowColorFor(arrow.id);
       final shake = _shakeOffsetFor(arrow, projector);
       drawables.add(
         _Drawable(head.depth, (c) {
@@ -182,7 +184,7 @@ class Graph3DBoardPainter extends CustomPainter {
           canvas,
           projector,
           exiting,
-          _colorForArrow(exiting.id),
+          arrowColorFor(exiting.id),
           opacity: (1.0 - exitProgress).clamp(0.0, 1.0),
           translation: translation,
         );
@@ -203,8 +205,9 @@ class Graph3DBoardPainter extends CustomPainter {
 
     final emphasized = arrow.id == lastActivatedArrowId;
     final strokeWorld = emphasized ? 0.30 : 0.26;
-    final strokeWidth =
-        math.max(3.0, head.pixelScale * strokeWorld).clamp(3.0, 14.0);
+    final strokeWidth = math
+        .max(3.0, head.pixelScale * strokeWorld)
+        .clamp(3.0, 14.0);
 
     final paint = Paint()
       ..color = color.withValues(alpha: opacity)
@@ -254,28 +257,13 @@ class Graph3DBoardPainter extends CustomPainter {
       );
     }
 
-    final tip = headPos + Offset(math.cos(angle), math.sin(angle)) * length;
-    final left = headPos +
-        Offset(
-              math.cos(angle + (math.pi * 0.72)),
-              math.sin(angle + (math.pi * 0.72)),
-            ) *
-            width;
-    final right = headPos +
-        Offset(
-              math.cos(angle - (math.pi * 0.72)),
-              math.sin(angle - (math.pi * 0.72)),
-            ) *
-            width;
-    canvas.drawPath(
-      Path()
-        ..moveTo(tip.dx, tip.dy)
-        ..lineTo(left.dx, left.dy)
-        ..lineTo(right.dx, right.dy)
-        ..close(),
-      Paint()
-        ..color = color.withValues(alpha: opacity)
-        ..style = PaintingStyle.fill,
+    paintArrowHead(
+      canvas,
+      headPos,
+      angle,
+      color.withValues(alpha: opacity),
+      length: length,
+      width: width,
     );
   }
 
@@ -292,17 +280,6 @@ class Graph3DBoardPainter extends CustomPainter {
     if (dir == null || dir.distance == 0) return Offset.zero;
     final amplitude = math.sin(shakeProgress * math.pi) * 6.0;
     return (dir / dir.distance) * amplitude;
-  }
-
-  Color _colorForArrow(String id) {
-    const colors = [
-      AppTheme.neonBlue,
-      AppTheme.neonGreen,
-      AppTheme.neonYellow,
-      AppTheme.neonPink,
-      AppTheme.neonPurple,
-    ];
-    return colors[id.hashCode.abs() % colors.length];
   }
 
   @override

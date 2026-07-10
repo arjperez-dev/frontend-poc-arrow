@@ -6,6 +6,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../domain/arrow_path.dart';
 import '../../domain/game_session.dart';
 import '../../domain/move_direction.dart';
+import 'arrow_head.dart';
+import 'board_style.dart';
 import 'graph_board_layout.dart';
 
 class GraphBoardPainter extends CustomPainter {
@@ -122,7 +124,7 @@ class GraphBoardPainter extends CustomPainter {
     Size size,
   ) {
     final isFlashing = arrow.id == flashingArrowId;
-    final color = isFlashing ? _collisionColor : _colorForArrow(arrow.id);
+    final color = isFlashing ? collisionFlashColor : arrowColorFor(arrow.id);
     final offset = _shakeOffsetFor(arrow, size);
     _paintArrowShape(canvas, layout, arrow, color, 1, offset);
   }
@@ -133,8 +135,11 @@ class GraphBoardPainter extends CustomPainter {
     ArrowPath arrow,
     Size size,
   ) {
-    final color = _colorForArrow(arrow.id);
-    final dir = Offset(arrow.direction.dx.toDouble(), arrow.direction.dy.toDouble());
+    final color = arrowColorFor(arrow.id);
+    final dir = Offset(
+      arrow.direction.dx.toDouble(),
+      arrow.direction.dy.toDouble(),
+    );
     final totalDistance = size.longestSide * 1.1;
 
     final nodes = arrow.orderedNodeIds; // tail → head
@@ -142,7 +147,10 @@ class GraphBoardPainter extends CustomPainter {
     if (n == 0) return;
 
     // Resolve pixel positions for every node (tail→head).
-    final positions = List<Offset?>.generate(n, (i) => layout.positionOf(nodes[i]));
+    final positions = List<Offset?>.generate(
+      n,
+      (i) => layout.positionOf(nodes[i]),
+    );
     final headPos = positions[n - 1];
     if (headPos == null) return;
 
@@ -191,7 +199,11 @@ class GraphBoardPainter extends CustomPainter {
           final segEnd = positions[j]!;
           final segLen = arcs[j] - arcs[j - 1];
           if (segLen <= 0) return segEnd;
-          return Offset.lerp(segStart, segEnd, (targetArc - arcs[j - 1]) / segLen)!;
+          return Offset.lerp(
+            segStart,
+            segEnd,
+            (targetArc - arcs[j - 1]) / segLen,
+          )!;
         }
       }
       return headPos;
@@ -314,46 +326,14 @@ class GraphBoardPainter extends CustomPainter {
     // far enough to draw over the next cell, where another arrow may sit.
     final length = math.max(5.0, math.min(18.0, cellSize * 0.42));
     final width = math.max(3.5, math.min(11.0, cellSize * 0.26));
-    final tip = position + Offset(math.cos(angle), math.sin(angle)) * length;
-    final left =
-        position +
-        Offset(
-              math.cos(angle + (math.pi * 0.72)),
-              math.sin(angle + (math.pi * 0.72)),
-            ) *
-            width;
-    final right =
-        position +
-        Offset(
-              math.cos(angle - (math.pi * 0.72)),
-              math.sin(angle - (math.pi * 0.72)),
-            ) *
-            width;
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    canvas.drawPath(
-      Path()
-        ..moveTo(tip.dx, tip.dy)
-        ..lineTo(left.dx, left.dy)
-        ..lineTo(right.dx, right.dy)
-        ..close(),
-      paint,
+    paintArrowHead(
+      canvas,
+      position,
+      angle,
+      color,
+      length: length,
+      width: width,
     );
-  }
-
-  static const Color _collisionColor = Color(0xFFFF4444);
-
-  Color _colorForArrow(String id) {
-    const colors = [
-      AppTheme.neonBlue,
-      AppTheme.neonGreen,
-      AppTheme.neonYellow,
-      AppTheme.neonPink,
-      AppTheme.neonPurple,
-    ];
-    return colors[id.hashCode.abs() % colors.length];
   }
 
   @override
