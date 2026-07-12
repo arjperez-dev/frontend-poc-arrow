@@ -66,5 +66,19 @@
   "gameOver": "Game Over",
   "gameOverMessage": "You ran out of lives.",
   "mistakes": "Mistakes",
-  "resetView": "Reset view"
+  "resetView": "Reset view",
+  "challengeTimeAttack": "Time Attack",
+  "challengeTimeAttackDescription": "Beat the level before the clock runs out.",
+  "challengeMoveLimit": "Move Limit",
+  "challengeMoveLimitDescription": "Clear every arrow within a fixed move budget.",
+  "challengePerfectRun": "Perfect Run",
+  "challengePerfectRunDescription": "One collision ends the run. Flawless only.",
+  "timeLeft": "Time",
+  "movesLeft": "Moves left",
+  "flawless": "Flawless",
+  "challengeBest": "Challenge best",
+  "newRecord": "New record!",
+  "challengeFailedTimeUp": "Time is up!",
+  "challengeFailedOutOfMoves": "Out of moves!",
+  "challengeFailedMistake": "A collision ended your perfect run."
 }

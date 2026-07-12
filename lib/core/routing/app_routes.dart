@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../features/auth/presentation/auth_screen.dart';
+import '../../features/challenges/domain/challenge.dart';
+import '../../features/challenges/presentation/challenge_picker_screen.dart';
 import '../../features/game/presentation/game_screen.dart';
 import '../../features/levels/presentation/level_selection_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/leaderboard/presentation/leaderboard_screen.dart';
 import '../../features/leaderboard/presentation/leaderboard_level_picker_screen.dart';
+import 'game_route_args.dart';
 
 class AppRoutes {
   const AppRoutes._();
@@ -18,6 +21,7 @@ class AppRoutes {
   static const auth = '/auth';
   static const leaderboard = '/leaderboard';
   static const leaderboardLevelPicker = '/leaderboard-level-picker';
+  static const challenges = '/challenges';
 
   /// Dev shortcut: opens level 21 (the first 3D level) through the normal
   /// pipeline without requiring levels 1-20 to be completed first
@@ -27,9 +31,12 @@ class AppRoutes {
   static Route<void> onGenerateRoute(RouteSettings routeSettings) {
     final builder = switch (routeSettings.name) {
       home => (_) => const HomeScreen(),
-      levels => (_) => const LevelSelectionScreen(),
+      levels => (_) => LevelSelectionScreen(
+        challenge: _readChallenge(routeSettings.arguments),
+      ),
       game => (_) => GameScreen(
         levelNumber: _readLevelNumber(routeSettings.arguments),
+        challenge: _readChallenge(routeSettings.arguments),
       ),
       settings => (_) => const SettingsScreen(),
       auth => (_) => const AuthScreen(),
@@ -37,6 +44,7 @@ class AppRoutes {
         levelNumber: _readLevelNumber(routeSettings.arguments),
       ),
       leaderboardLevelPicker => (_) => const LeaderboardLevelPickerScreen(),
+      challenges => (_) => const ChallengePickerScreen(),
       _ => (_) => const HomeScreen(),
     };
 
@@ -46,6 +54,19 @@ class AppRoutes {
   static int? _readLevelNumber(Object? arguments) {
     if (arguments is int) {
       return arguments;
+    }
+    if (arguments is GameRouteArgs) {
+      return arguments.levelNumber;
+    }
+    return null;
+  }
+
+  static Challenge? _readChallenge(Object? arguments) {
+    if (arguments is Challenge) {
+      return arguments;
+    }
+    if (arguments is GameRouteArgs) {
+      return arguments.challenge;
     }
     return null;
   }
