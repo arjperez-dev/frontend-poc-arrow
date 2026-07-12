@@ -214,49 +214,4 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get resetView => 'Reset view';
-
-  @override
-  String get challengeTimeAttack => 'Time Attack';
-
-  @override
-  String get challengeTimeAttackDescription =>
-      'Beat the level before the clock runs out.';
-
-  @override
-  String get challengeMoveLimit => 'Move Limit';
-
-  @override
-  String get challengeMoveLimitDescription =>
-      'Clear every arrow within a fixed move budget.';
-
-  @override
-  String get challengePerfectRun => 'Perfect Run';
-
-  @override
-  String get challengePerfectRunDescription =>
-      'One collision ends the run. Flawless only.';
-
-  @override
-  String get timeLeft => 'Time';
-
-  @override
-  String get movesLeft => 'Moves left';
-
-  @override
-  String get flawless => 'Flawless';
-
-  @override
-  String get challengeBest => 'Challenge best';
-
-  @override
-  String get newRecord => 'New record!';
-
-  @override
-  String get challengeFailedTimeUp => 'Time is up!';
-
-  @override
-  String get challengeFailedOutOfMoves => 'Out of moves!';
-
-  @override
-  String get challengeFailedMistake => 'A collision ended your perfect run.';
 }

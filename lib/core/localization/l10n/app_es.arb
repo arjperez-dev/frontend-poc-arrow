@@ -66,19 +66,5 @@
   "gameOver": "Fin del juego",
   "gameOverMessage": "Te quedaste sin vidas.",
   "mistakes": "Errores",
-  "resetView": "Restablecer vista",
-  "challengeTimeAttack": "Contrarreloj",
-  "challengeTimeAttackDescription": "Supera el nivel antes de que acabe el tiempo.",
-  "challengeMoveLimit": "Movimientos limitados",
-  "challengeMoveLimitDescription": "Despeja todas las flechas con un presupuesto fijo de movimientos.",
-  "challengePerfectRun": "Partida perfecta",
-  "challengePerfectRunDescription": "Una colision termina la partida. Solo perfeccion.",
-  "timeLeft": "Tiempo",
-  "movesLeft": "Movimientos restantes",
-  "flawless": "Impecable",
-  "challengeBest": "Mejor del reto",
-  "newRecord": "Nuevo record!",
-  "challengeFailedTimeUp": "Se acabo el tiempo!",
-  "challengeFailedOutOfMoves": "Sin movimientos!",
-  "challengeFailedMistake": "Una colision termino tu partida perfecta."
+  "resetView": "Restablecer vista"
 }

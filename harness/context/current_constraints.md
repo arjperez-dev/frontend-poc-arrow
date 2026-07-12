@@ -52,26 +52,6 @@ Check every item on this list before starting any phase. Update this file when c
 - `GraphBoard`'s `AspectRatio` is computed from the level's own node bounding box (`_boardAspectRatio`, clamped `[0.6, 1.6]`), not hardcoded to 1. Don't revert this to a fixed square without checking how it affects figure-level layouts (15, 19, 20 are notably non-square).
 - `GraphBoard.onInteractionActiveChanged` + `GameScreen._lockPageScroll` exist specifically to stop the page-level `ListView` from competing with `InteractiveViewer`'s pinch gesture (a Flutter gesture-arena race: the ancestor `Scrollable` can claim the first finger before the second lands). If you restructure `GameScreen`'s layout or `GraphBoard`'s gesture handling, preserve this pointer-count → scroll-lock coupling, or pinch-to-zoom will regress to being hard to start.
 
-## Challenges (Phase 26)
-
-- Challenge results are FULLY SEPARATE from campaign progress: a challenge
-  victory saves to `challenges.bestScores` (SharedPreferences) and must
-  never call `SaveLevelCompletionUseCase`, remote sync, or the leaderboard.
-  The separation is asserted by a dedicated test — keep it green.
-- Challenge rules (move budget, perfect-run fail, clock expiry) live in the
-  application layer (`MoveArrowUseCase` / `GameSessionService.tickClock`).
-  The controller's Timer only calls `tickClock`; do not put rules in it.
-- Scoring for challenges goes through `scoreStrategyForChallenge` — add new
-  challenge types by adding a `ScoreStrategy` implementation and a factory
-  arm, never by branching inside score computation.
-- Challenge limits are CALCULATED (`ChallengeContext.forLevel`): time =
-  max(30s, arrows × 5/4/3s − 20s by tier), moves = arrows + 5/3/2 slack by tier.
-  The `timeLimit`/`maxMoves` level metadata remain dormant — do not read
-  them for gameplay without updating this note.
-- Lives (hearts AND the six-collision game-over) are campaign-only. In
-  challenge sessions `MoveArrowUseCase` skips the lives check entirely —
-  a challenge fails only via its own rule. Do not re-couple them.
-
 ## Git
 
 - Never work on `main`.
@@ -86,4 +66,4 @@ Check every item on this list before starting any phase. Update this file when c
 
 ---
 
-*Last updated: 2026-07-12 (Phase 26 — challenges mode: separation contract, application-layer challenge rules, strategy-based scoring, live timeLimit/maxMoves metadata)*
+*Last updated: 2026-07-10 (Phase 24.1 — 2D/3D level file split: `manual_levels.json` replaced by `manual_levels_2d.json` (1–20) + `manual_levels_3d.json` (21–25); `--generate`/`--generate-figures`/`--generate-3d` replaced by `--generate-2d`/`--generate-3d`/`--generate` shorthand; internal numbering, offset, progress/leaderboard/sync, and backend unchanged)*

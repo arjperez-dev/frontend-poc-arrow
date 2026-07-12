@@ -3,10 +3,7 @@ import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart
 
 import '../../../core/app/app_settings_scope.dart';
 import '../../../core/routing/app_routes.dart';
-import '../../../core/routing/game_route_args.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../challenges/domain/challenge.dart';
-import '../../challenges/infrastructure/challenge_dependencies.dart';
 import '../../game/domain/level.dart';
 import '../../game/infrastructure/local_level_dependencies.dart';
 import '../../game/presentation/game_ui_keys.dart';
@@ -17,27 +14,12 @@ import '../../settings/domain/game_mode.dart';
 
 typedef LoadLocalLevels = Future<List<Level>> Function();
 typedef LoadLocalProgress = Future<LocalProgress> Function();
-typedef LoadChallengeRecords =
-    Future<Map<int, int>> Function(Challenge challenge);
 
 class LevelSelectionScreen extends StatefulWidget {
-  const LevelSelectionScreen({
-    this.loadLevels,
-    this.loadProgress,
-    this.loadChallengeRecords,
-    this.challenge,
-    super.key,
-  });
+  const LevelSelectionScreen({this.loadLevels, this.loadProgress, super.key});
 
   final LoadLocalLevels? loadLevels;
   final LoadLocalProgress? loadProgress;
-  final LoadChallengeRecords? loadChallengeRecords;
-
-  /// When set, opening a level starts it with this challenge modifier.
-  /// Level filtering and unlocking are unchanged (same locks as campaign),
-  /// but the score shown per card is the CHALLENGE best — or nothing at all
-  /// for levels not yet played in this challenge (never the campaign best).
-  final Challenge? challenge;
 
   @override
   State<LevelSelectionScreen> createState() => _LevelSelectionScreenState();
@@ -60,19 +42,9 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
         widget.loadProgress ??
         (await LocalProgressDependencies.createGetLocalProgressUseCase()).call;
 
-    final challenge = widget.challenge;
-    Map<int, int>? challengeRecords;
-    if (challenge != null) {
-      final loadRecords =
-          widget.loadChallengeRecords ??
-          (await ChallengeDependencies.createGetChallengeRecordsUseCase()).call;
-      challengeRecords = await loadRecords(challenge);
-    }
-
     return _LevelSelectionData(
       levels: await loadLevels(),
       progress: await loadProgress(),
-      challengeRecords: challengeRecords,
     );
   }
 
@@ -86,13 +58,9 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
   /// in-app button, the app-bar back arrow, and the Android system back button,
   /// since `Navigator.push` completes on any pop.
   Future<void> _openLevel(BuildContext context, int? levelNumber) async {
-    final challenge = widget.challenge;
-    await Navigator.of(context).pushNamed(
-      AppRoutes.game,
-      arguments: challenge == null
-          ? levelNumber
-          : GameRouteArgs(levelNumber: levelNumber, challenge: challenge),
-    );
+    await Navigator.of(
+      context,
+    ).pushNamed(AppRoutes.game, arguments: levelNumber);
     if (!mounted) {
       return;
     }
@@ -132,8 +100,7 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
               wantThreeD: gameMode == GameMode.threeD,
             );
             final progress = screenData.progress;
-            final challenge = widget.challenge;
-            final levelList = ListView.separated(
+            return ListView.separated(
               padding: const EdgeInsets.all(20),
               itemCount: levels.length,
               separatorBuilder: (_, _) => const SizedBox(height: 12),
@@ -150,13 +117,7 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
                   displayNumber: displayNumberFor(levelNumber, gameMode),
                   isUnlocked: isUnlocked,
                   isCompleted: progress.isCompleted(levelNumber),
-                  // Challenge mode shows the CHALLENGE best (or nothing when
-                  // this level hasn't been played in this challenge yet) —
-                  // never the campaign best.
-                  bestScore: challenge == null
-                      ? progress.bestResultFor(levelNumber)?.score
-                      : screenData.challengeRecords?[levelNumber],
-                  isChallengeBest: challenge != null,
+                  bestScore: progress.bestResultFor(levelNumber)?.score,
                   onTap: isUnlocked
                       ? () => _openLevel(context, level.number)
                       : () {
@@ -167,44 +128,6 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
                 );
               },
             );
-            if (challenge == null) {
-              return levelList;
-            }
-            // Challenge banner: which modifier the picked level will run.
-            final challengeName = switch (challenge) {
-              Challenge.timeAttack => localizations.challengeTimeAttack,
-              Challenge.moveLimit => localizations.challengeMoveLimit,
-              Challenge.perfectRun => localizations.challengePerfectRun,
-            };
-            return Column(
-              children: [
-                Container(
-                  key: GameUiKeys.challengeBanner,
-                  width: double.infinity,
-                  margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.neonPink.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppTheme.neonPink.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Text(
-                    '${localizations.challenges}: $challengeName',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppTheme.softText,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                Expanded(child: levelList),
-              ],
-            );
           },
         ),
       ),
@@ -213,14 +136,7 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
 }
 
 class _LevelSelectionData {
-  const _LevelSelectionData({
-    required this.levels,
-    required this.progress,
-    this.challengeRecords,
-  });
-
-  /// Best score per level for the active challenge; null in campaign mode.
-  final Map<int, int>? challengeRecords;
+  const _LevelSelectionData({required this.levels, required this.progress});
 
   final List<Level> levels;
   final LocalProgress progress;
@@ -233,7 +149,6 @@ class _LevelCard extends StatelessWidget {
     required this.isUnlocked,
     required this.isCompleted,
     required this.bestScore,
-    this.isChallengeBest = false,
     required this.onTap,
   });
 
@@ -242,10 +157,6 @@ class _LevelCard extends StatelessWidget {
   final bool isUnlocked;
   final bool isCompleted;
   final int? bestScore;
-
-  /// Labels [bestScore] as the challenge best instead of the campaign best.
-  final bool isChallengeBest;
-
   final VoidCallback onTap;
 
   @override
@@ -315,8 +226,6 @@ class _LevelCard extends StatelessWidget {
                     Text(
                       bestScore == null
                           ? status
-                          : isChallengeBest
-                          ? '$status - ${localizations.challengeBest}: $bestScore'
                           : '$status - ${localizations.bestScore}: $bestScore',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: accent,

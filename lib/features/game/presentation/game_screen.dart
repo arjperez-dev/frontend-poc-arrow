@@ -3,11 +3,8 @@ import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart
 import '../../audio/application/background_music_controller.dart';
 import '../../../core/app/app_settings_scope.dart';
 import '../../../core/routing/app_routes.dart';
-import '../../../core/routing/game_route_args.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../audio/infrastructure/audio_manager.dart';
-import '../../challenges/domain/challenge.dart';
-import '../../challenges/infrastructure/challenge_dependencies.dart';
 import '../../settings/domain/game_mode.dart';
 import '../domain/game_session.dart';
 import '../infrastructure/local_level_dependencies.dart';
@@ -21,36 +18,26 @@ import 'widgets/graph_3d_board.dart';
 class GameScreen extends StatefulWidget {
   const GameScreen({
     required this.levelNumber,
-    this.challenge,
     this.loadLevelByNumber,
     this.saveLevelCompletion,
     this.notifyRemoteLevelCompletion,
     this.getBestLevelResult,
     this.playGameAudio,
     this.backgroundMusicController,
-    this.saveChallengeRecord,
-    this.getChallengeBestScore,
     this.enableBoardAnimations = true,
     super.key,
   });
 
   final int? levelNumber;
-
-  /// Active challenge modifier, or null for normal campaign play.
-  final Challenge? challenge;
-
   final LoadLevelByNumber? loadLevelByNumber;
   final SaveLevelCompletion? saveLevelCompletion;
   final NotifyRemoteLevelCompletion? notifyRemoteLevelCompletion;
   final GetBestLevelResult? getBestLevelResult;
   final PlayGameAudio? playGameAudio;
   final BackgroundMusicController? backgroundMusicController;
-  final SaveChallengeRecord? saveChallengeRecord;
-  final GetChallengeBestScore? getChallengeBestScore;
 
   /// When false (widget tests), the board renders resolved state without
-  /// starting animation tickers, and the Time Attack clock does not run on a
-  /// real Timer (tests drive it via [GameScreenController.advanceClock]).
+  /// starting animation tickers.
   final bool enableBoardAnimations;
 
   @override
@@ -78,7 +65,6 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Future<void> _createController() async {
-    final challenge = widget.challenge;
     final controller = GameScreenController(
       levelNumber: widget.levelNumber,
       loadLevelByNumber:
@@ -98,16 +84,6 @@ class _GameScreenState extends State<GameScreen> {
               .call,
       playGameAudio:
           widget.playGameAudio ?? AudioManager.instance.playGameAudio,
-      challenge: challenge,
-      saveChallengeRecord: challenge == null
-          ? null
-          : widget.saveChallengeRecord ??
-                (await ChallengeDependencies.createSaveChallengeRecordUseCase())
-                    .call,
-      getChallengeBestScore: challenge == null
-          ? null
-          : widget.getChallengeBestScore ?? await _productionChallengeBest(),
-      enableChallengeTimer: widget.enableBoardAnimations,
     );
     if (!mounted) {
       controller.dispose();
@@ -133,15 +109,6 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     await controller.load();
-  }
-
-  static Future<GetChallengeBestScore> _productionChallengeBest() async {
-    final getRecords =
-        await ChallengeDependencies.createGetChallengeRecordsUseCase();
-    return (Challenge challenge, int levelNumber) async {
-      final records = await getRecords(challenge);
-      return records[levelNumber];
-    };
   }
 
   @override
@@ -231,19 +198,14 @@ class _GameScreenState extends State<GameScreen> {
     Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.levels,
       (route) => route.settings.name == AppRoutes.home,
-      arguments: widget.challenge,
     );
   }
 
   void _openNextLevel() {
     final nextLevelNumber = (_controller?.level?.number ?? 0) + 1;
-    final challenge = widget.challenge;
-    Navigator.of(context).pushReplacementNamed(
-      AppRoutes.game,
-      arguments: challenge == null
-          ? nextLevelNumber
-          : GameRouteArgs(levelNumber: nextLevelNumber, challenge: challenge),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacementNamed(AppRoutes.game, arguments: nextLevelNumber);
   }
 
   void _openLeaderboard() {
@@ -296,7 +258,7 @@ class _GameReadyView extends StatelessWidget {
               ? const NeverScrollableScrollPhysics()
               : const ClampingScrollPhysics(),
           children: [
-            _GameHud(session: session, controller: controller),
+            _GameHud(session: session),
             const SizedBox(height: 18),
             if (level.boardGraph.isMultiLayer)
               Graph3DBoard(
@@ -343,11 +305,7 @@ class _GameReadyView extends StatelessWidget {
           _VictoryOverlay(
             score: session.score.value,
             moves: session.movesCount,
-            bestScore: controller.challenge == null
-                ? controller.bestResult?.score
-                : controller.challengeBestScore,
-            isChallenge: controller.challenge != null,
-            isNewChallengeRecord: controller.isNewChallengeRecord,
+            bestScore: controller.bestResult?.score,
             hasNextLevel: hasNextLevelFor(level.number ?? 0, gameMode),
             nextLevelDisplayNumber: displayNumberFor(
               (level.number ?? 0) + 1,
@@ -362,7 +320,6 @@ class _GameReadyView extends StatelessWidget {
           _GameOverOverlay(
             score: session.score.value,
             mistakes: session.mistakeCount,
-            challengeFailReason: controller.challengeFailReason,
             onRetry: controller.restart,
             onBackToLevels: onBackToLevels,
           ),
@@ -376,34 +333,13 @@ class _GameReadyView extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _GameHud extends StatelessWidget {
-  const _GameHud({required this.session, required this.controller});
+  const _GameHud({required this.session});
 
   final GameSession session;
-  final GameScreenController controller;
-
-  String _formatClock(int seconds) {
-    final minutes = seconds ~/ 60;
-    final rest = seconds % 60;
-    return '$minutes:${rest.toString().padLeft(2, '0')}';
-  }
 
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
-
-    // Challenge chip: one extra stat that names the active constraint.
-    final (String, String)? challengeStat = switch (controller.challenge) {
-      Challenge.timeAttack => (
-        localizations.timeLeft,
-        _formatClock(controller.remainingSeconds ?? 0),
-      ),
-      Challenge.moveLimit => (
-        localizations.movesLeft,
-        '${controller.remainingMoves ?? 0}',
-      ),
-      Challenge.perfectRun => (localizations.flawless, '✓'),
-      null => null,
-    };
 
     return Row(
       children: [
@@ -422,22 +358,8 @@ class _GameHud extends StatelessWidget {
             value: '${session.score.value}',
           ),
         ),
-        if (challengeStat != null) ...[
-          const SizedBox(width: 8),
-          Expanded(
-            child: _StatCard(
-              key: GameUiKeys.challengeStatChip,
-              label: challengeStat.$1,
-              value: challengeStat.$2,
-            ),
-          ),
-        ] else ...[
-          // Hearts are campaign-only: a challenge is judged by its own
-          // constraint (clock / budget / flawlessness), so the HUD shows the
-          // challenge stat in place of the lives card.
-          const SizedBox(width: 8),
-          _LivesCard(key: GameUiKeys.livesLabel, lives: session.livesRemaining),
-        ],
+        const SizedBox(width: 8),
+        _LivesCard(key: GameUiKeys.livesLabel, lives: session.livesRemaining),
       ],
     );
   }
@@ -510,8 +432,6 @@ class _VictoryOverlay extends StatelessWidget {
     required this.score,
     required this.moves,
     required this.bestScore,
-    required this.isChallenge,
-    required this.isNewChallengeRecord,
     required this.hasNextLevel,
     required this.nextLevelDisplayNumber,
     required this.onRetry,
@@ -523,12 +443,6 @@ class _VictoryOverlay extends StatelessWidget {
   final int score;
   final int moves;
   final int? bestScore;
-
-  /// Challenge victories show the challenge best and hide the leaderboard
-  /// (challenge results never touch the campaign leaderboard, by design).
-  final bool isChallenge;
-  final bool isNewChallengeRecord;
-
   final bool hasNextLevel;
   final int nextLevelDisplayNumber;
   final VoidCallback onRetry;
@@ -556,22 +470,10 @@ class _VictoryOverlay extends StatelessWidget {
                     style: Theme.of(context).textTheme.headlineSmall,
                   ),
                   const SizedBox(height: 12),
-                  if (isChallenge && isNewChallengeRecord)
-                    Text(
-                      localizations.newRecord,
-                      style: const TextStyle(
-                        color: AppTheme.neonMint,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
                   Text('${localizations.score}: $score'),
                   Text('${localizations.moves}: $moves'),
                   if (bestScore != null)
-                    Text(
-                      isChallenge
-                          ? '${localizations.challengeBest}: $bestScore'
-                          : '${localizations.bestScore}: $bestScore',
-                    ),
+                    Text('${localizations.bestScore}: $bestScore'),
                   const SizedBox(height: 18),
                   FilledButton(
                     key: GameUiKeys.retryButton,
@@ -584,14 +486,12 @@ class _VictoryOverlay extends StatelessWidget {
                     onPressed: onBackToLevels,
                     child: Text(localizations.backToLevels),
                   ),
-                  if (!isChallenge) ...[
-                    const SizedBox(height: 10),
-                    OutlinedButton(
-                      key: GameUiKeys.leaderboardButton,
-                      onPressed: onOpenLeaderboard,
-                      child: Text(localizations.leaderboard),
-                    ),
-                  ],
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    key: GameUiKeys.leaderboardButton,
+                    onPressed: onOpenLeaderboard,
+                    child: Text(localizations.leaderboard),
+                  ),
                   if (hasNextLevel) ...[
                     const SizedBox(height: 10),
                     OutlinedButton(
@@ -620,31 +520,18 @@ class _GameOverOverlay extends StatelessWidget {
   const _GameOverOverlay({
     required this.score,
     required this.mistakes,
-    required this.challengeFailReason,
     required this.onRetry,
     required this.onBackToLevels,
   });
 
   final int score;
   final int mistakes;
-
-  /// Non-null when a challenge caused the failure — selects a specific
-  /// message (time up / out of moves / broken perfect run).
-  final ChallengeFailReason? challengeFailReason;
-
   final VoidCallback onRetry;
   final VoidCallback onBackToLevels;
 
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
-    final message = switch (challengeFailReason) {
-      ChallengeFailReason.timeUp => localizations.challengeFailedTimeUp,
-      ChallengeFailReason.outOfMoves =>
-        localizations.challengeFailedOutOfMoves,
-      ChallengeFailReason.mistake => localizations.challengeFailedMistake,
-      ChallengeFailReason.livesOut || null => localizations.gameOverMessage,
-    };
 
     return Positioned.fill(
       child: ColoredBox(
@@ -663,7 +550,7 @@ class _GameOverOverlay extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    message,
+                    localizations.gameOverMessage,
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 12),

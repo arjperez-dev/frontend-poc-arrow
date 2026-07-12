@@ -1,7 +1,5 @@
 import 'package:flutter/widgets.dart';
 
-import '../../challenges/domain/challenge.dart';
-
 class GameUiKeys {
   const GameUiKeys._();
 
@@ -29,10 +27,4 @@ class GameUiKeys {
   static const gameModeSelector = Key('settings-game-mode-selector');
 
   static Key levelCard(int levelNumber) => Key('level-card-$levelNumber');
-
-  static const challengeStatChip = Key('challenge-stat-chip');
-  static const challengeBanner = Key('challenge-banner');
-
-  static Key challengeCard(Challenge challenge) =>
-      Key('challenge-card-${challenge.storageKey}');
 }

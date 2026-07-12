@@ -123,9 +123,7 @@ class _HomeScreenState extends State<HomeScreen>
                           icon: Icons.view_in_ar_rounded,
                           label: localizations.challenges,
                           accentColor: AppTheme.neonPink,
-                          onPressed: () => Navigator.of(
-                            context,
-                          ).pushNamed(AppRoutes.challenges),
+                          onPressed: null,
                         ),
                       ),
                     ],
