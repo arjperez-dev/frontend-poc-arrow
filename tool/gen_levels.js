@@ -802,6 +802,20 @@ function Builder3D(number, name, difficulty) {
     verticalSpan(x, y, zTail, zHead, direction) {
       this._pushArrow([this.addNode(x, y, zTail), this.addNode(x, y, zHead)], direction);
     },
+    // Layer-axis arrow over consecutive z cells at (x, y) — the multi-layer
+    // generalization of verticalSpan. Tail→head: for 'above' the head is the
+    // lowest z, for 'below' the highest.
+    zColArrow(zs, x, y, direction) {
+      const ordered = direction === 'above' ? [...zs].sort((a, b) => b - a) : [...zs].sort((a, b) => a - b);
+      this._pushArrow(ordered.map(z => this.addNode(x, y, z)), direction);
+    },
+    // Free-form arrow over an explicit tail→head cell path [[x,y,z], ...].
+    // Used by figure levels for bent arrows that step across layers
+    // (staircase rays, tails). Caller must order cells tail→head and pass
+    // the direction of the LAST step (head must be the exit-facing end).
+    pathArrow(cells, direction) {
+      this._pushArrow(cells.map(([x, y, z]) => this.addNode(x, y, z)), direction);
+    },
     // In-plane connectivity: x- and y-edges between adjacent nodes of the
     // same layer. Never gameplay-relevant (edges only matter when blocked),
     // exactly like the 2D tiers' weave(); both axes are woven because 3D
@@ -1014,10 +1028,242 @@ function build3DLevel25() {
   return b.build({ t: 40, m: 340 });
 }
 
+// Level 26 — "3D Cross" (displayed as 3D level 6). One TRUE 3D cross: a
+// flat plus-sign plate at the middle layer (X-bar and Y-bar, each 2 cells
+// thick and 10 long) with a 2×2 vertical post punched through its shared
+// center from z0 to z4 — three orthogonal bars meeting at a single
+// intersection, like a jack. The center 2×2 belongs to the post columns, so
+// every inward plate arrow chains THROUGH the intersection; each line uses
+// one direction only (no head-on pairs) and drains at a free outer arrow.
+function build3DLevel26() {
+  const b = Builder3D(26, 'Level 26', 'hard');
+  // Post: 2×2 columns (x4-5, y4-5) spanning z0-z4; their z2 cells ARE the
+  // plate's center. Each column pairs a free exit with a chained half.
+  for (const [x, y, freeTop] of [[4, 4, true], [5, 4, false], [4, 5, false], [5, 5, true]]) {
+    if (freeTop) {
+      b.zColArrow([0, 1], x, y, 'above');      // exits up
+      b.zColArrow([2, 3, 4], x, y, 'above');   // chains through it
+    } else {
+      b.zColArrow([2, 3, 4], x, y, 'below');   // exits down
+      b.zColArrow([0, 1], x, y, 'below');      // chains through it
+    }
+  }
+  // Plate at z2. X-bar rows y4 (all east) and y5 (all west); Y-bar cols
+  // x4 (all south) and x5 (all north). Inner arrows sweep across the post
+  // and the far half before exiting — back and forth through the center.
+  b.rowArrow([0, 1], 4, 2, 'right'); b.rowArrow([2, 3], 4, 2, 'right');
+  b.rowArrow([6, 7], 4, 2, 'right'); b.rowArrow([8, 9], 4, 2, 'right');
+  b.rowArrow([8, 9], 5, 2, 'left'); b.rowArrow([6, 7], 5, 2, 'left');
+  b.rowArrow([2, 3], 5, 2, 'left'); b.rowArrow([0, 1], 5, 2, 'left');
+  b.colArrow([0, 1], 4, 2, 'down'); b.colArrow([2, 3], 4, 2, 'down');
+  b.colArrow([6, 7], 4, 2, 'down'); b.colArrow([8, 9], 4, 2, 'down');
+  b.colArrow([8, 9], 5, 2, 'up'); b.colArrow([6, 7], 5, 2, 'up');
+  b.colArrow([2, 3], 5, 2, 'up'); b.colArrow([0, 1], 5, 2, 'up');
+  // Post continuity: each column's two arrow pieces meet at z1/z2 with no
+  // shared body edge — join them (unclaimed z-edges, like weave edges).
+  for (const [x, y] of [[4, 4], [5, 4], [4, 5], [5, 5]]) {
+    b.addEdge(nid3(x, y, 1), nid3(x, y, 2));
+  }
+  b.weaveLayers();
+  return b.build({ t: 40, m: 300 });
+}
+
+// Level 27 — "3D Star" (displayed as 7). A starburst: a compact octahedral
+// core (3×3 mid layer with plus-shaped caps above and below) radiating
+// FOURTEEN spikes — six straight ones along ±x/±y/±z, four rising and four
+// falling bent spikes off the caps' tips and the core's corners. Axis
+// spikes are contiguous lines through the core, so inward spikes chain
+// through the middle; every diagonal spike sweeps out into empty air.
+function build3DLevel27() {
+  const b = Builder3D(27, 'Level 27', 'hard');
+  // Core mid layer z3: 3×3 at x4-6, y4-6 (center 5,5).
+  b.rowArrow([4, 5, 6], 4, 3, 'right');   // chains into the NE corner spike
+  b.rowArrow([4, 5, 6], 5, 3, 'left');    // chains west through the x spikes
+  b.rowArrow([4, 5, 6], 6, 3, 'right');   // chains into the SE corner spike
+  // Caps z2/z4: a plus of 5 cells — a 3-cell column plus two tips owned by
+  // the rising/falling cap spikes.
+  b.colArrow([4, 5, 6], 5, 2, 'up');
+  b.colArrow([4, 5, 6], 5, 4, 'down');
+  b.pathArrow([[4, 5, 2], [4, 5, 1], [3, 5, 1], [3, 5, 0]], 'above');  // W rising
+  b.pathArrow([[6, 5, 2], [6, 5, 1], [7, 5, 1], [7, 5, 0]], 'above');  // E rising
+  b.pathArrow([[4, 5, 4], [4, 5, 5], [3, 5, 5], [3, 5, 6]], 'below');  // W falling
+  b.pathArrow([[6, 5, 4], [6, 5, 5], [7, 5, 5], [7, 5, 6]], 'below');  // E falling
+  // Straight axis spikes (length 4, split free/chained) on the center lines.
+  b.rowArrow([0, 1], 5, 3, 'left');       // west outer: free
+  b.rowArrow([2, 3], 5, 3, 'left');       // west inner: chains through outer
+  b.rowArrow([7, 8], 5, 3, 'left');       // east inner: chains through the core
+  b.rowArrow([9, 10], 5, 3, 'left');      // east outer: chains through inner
+  b.colArrow([0, 1], 5, 3, 'up');         // north outer: free
+  b.colArrow([2, 3], 5, 3, 'up');         // north inner
+  b.colArrow([7, 8], 5, 3, 'up');         // south inner: chains through the core
+  b.colArrow([9, 10], 5, 3, 'up');        // south outer
+  // Vertical spikes through the core column (5,5): top exits, bottom chains
+  // all the way up through cap-core-cap and out.
+  b.zColArrow([0, 1], 5, 5, 'above');
+  b.zColArrow([5, 6], 5, 5, 'above');
+  // Corner spikes at the mid layer: bent, pointing away diagonally.
+  b.pathArrow([[7, 4, 3], [7, 3, 3], [8, 3, 3], [8, 2, 3]], 'up');     // NE
+  b.pathArrow([[3, 4, 3], [3, 3, 3], [2, 3, 3], [2, 2, 3]], 'up');     // NW
+  b.pathArrow([[7, 6, 3], [7, 7, 3], [8, 7, 3], [8, 8, 3]], 'down');   // SE
+  b.pathArrow([[3, 6, 3], [3, 7, 3], [2, 7, 3], [2, 8, 3]], 'down');   // SW
+  // Core column continuity (unclaimed z-edges between EVERY vertical piece:
+  // z-spike → cap → core → cap → z-spike; caps otherwise float, since weave
+  // only joins nodes within a layer).
+  b.addEdge(nid3(5, 5, 1), nid3(5, 5, 2));
+  b.addEdge(nid3(5, 5, 2), nid3(5, 5, 3));
+  b.addEdge(nid3(5, 5, 3), nid3(5, 5, 4));
+  b.addEdge(nid3(5, 5, 4), nid3(5, 5, 5));
+  b.weaveLayers();
+  return b.build({ t: 40, m: 300 });
+}
+
+// Level 28 — "Abstract Cat" (displayed as 8). The iconic SITTING cat in
+// side profile (facing right), two layers deep: a tall rounded haunch at
+// the back, a smaller head up front with two pointed ear columns, a chest
+// tucked under the chin, and a tail hugging the back edge that rises and
+// hooks inward at the top. Ears are upward columns; the tail is one long
+// bent arrow on the back layer only.
+//
+//   y0  ........E.E.     E = ear columns (x8, x10)
+//   y1  ........E.E.
+//   y2  .......HHHHH     H = head x7-11
+//   y3  .......HHHHH
+//   y4  T.BBBBBBBB..     B = body/back x2-9 (chest tucks under the chin)
+//   y5  TBBBBBBBBB..     body x1-9
+//   y6  TBBBBBBBBBB.     body + front leg x1-10
+//   y7  TBBBBBBBBBB.     base x1-10        T = tail column x0 (back layer)
+function build3DLevel28() {
+  const b = Builder3D(28, 'Level 28', 'hard');
+  for (const z of [0, 1]) {
+    // Ears (pointed, upright — they exit straight up past the head).
+    b.colArrow([0, 1], 8, z, 'up');
+    b.colArrow([0, 1], 10, z, 'up');
+    // Head (x7-11, y2-3).
+    b.rowArrow([7, 8, 9], 2, z, 'right'); b.rowArrow([10, 11], 2, z, 'right');
+    b.rowArrow([10, 11], 3, z, 'left'); b.rowArrow([7, 8, 9], 3, z, 'left');
+    // Back/body. The spine spans carve (5,4) and (5,6); each carved row has
+    // exactly one side chaining into the spine.
+    b.rowArrow([2, 3, 4], 4, z, 'right');            // chains into the spine
+    b.rowArrow([6, 7, 8, 9], 4, z, 'right');         // exits east under the chin
+    b.rowArrow([1, 2], 5, z, 'left'); b.rowArrow([3, 4], 5, z, 'left');
+    b.rowArrow([5, 6], 5, z, 'left'); b.rowArrow([7, 8, 9], 5, z, 'left');
+    b.rowArrow([1, 2, 3, 4], 6, z, 'right');         // chains into the spine
+    b.rowArrow([6, 7], 6, z, 'right'); b.rowArrow([8, 9, 10], 6, z, 'right');
+    b.rowArrow([1, 2], 7, z, 'right'); b.rowArrow([3, 4], 7, z, 'right');
+    b.rowArrow([5, 6], 7, z, 'right'); b.rowArrow([7, 8], 7, z, 'right');
+    b.rowArrow([9, 10], 7, z, 'right');
+  }
+  // Spine: front↔back spans in the carved column.
+  b.verticalSpan(5, 4, 0, 1, 'below');
+  b.verticalSpan(5, 6, 1, 0, 'above');
+  // Tail: back layer only — hugs the haunch, rises along x0, hooks inward
+  // at the top. Its head waits for the y4 body row, so the tail is one of
+  // the last pieces to leave (it uncurls at the end).
+  b.pathArrow([[0, 7, 1], [0, 6, 1], [0, 5, 1], [0, 4, 1], [1, 4, 1]], 'right');
+  b.weaveLayers();
+  return b.build({ t: 40, m: 320 });
+}
+
+// Level 29 — "Double Helix" (displayed as 9). DNA: two strand arms orbit a
+// central axis column, rotating 45° per layer over ten layers (1.25 turns),
+// always 180° apart. On axis-aligned layers the arms lie on one straight
+// line through the axis — one arm points INWARD (the base-pair bond,
+// blocked through the axis and the far strand), the other exits outward.
+// On diagonal layers the arms are bent elbows sweeping out into empty air.
+// The axis is the only full-height column; strand cells never stack, which
+// is exactly what makes the spiral read when orbited.
+function build3DLevel29() {
+  const b = Builder3D(29, 'Level 29', 'hard');
+  // Axis (3,3), z0-9: top half chains through the bottom half.
+  b.zColArrow([0, 1, 2, 3, 4], 3, 3, 'below');
+  b.zColArrow([5, 6, 7, 8, 9], 3, 3, 'below');
+  b.addEdge(nid3(3, 3, 4), nid3(3, 3, 5));
+  // One strand arm. dir8: 0=N,1=NE,2=E,3=SE,4=S,5=SW,6=W,7=NW.
+  // Axis-aligned arms are straight 3-cell lines from the board edge to the
+  // cell beside the axis; `inward` points them at the axis. Diagonal arms
+  // are bent elbows starting beside the axis and stepping outward.
+  const arm = (dir8, z, inward) => {
+    switch (dir8) {
+      case 0: b.colArrow([0, 1, 2], 3, z, inward ? 'down' : 'up'); break;
+      case 2: b.rowArrow([4, 5, 6], 3, z, inward ? 'left' : 'right'); break;
+      case 4: b.colArrow([4, 5, 6], 3, z, inward ? 'up' : 'down'); break;
+      case 6: b.rowArrow([0, 1, 2], 3, z, inward ? 'right' : 'left'); break;
+      case 1: b.pathArrow([[3, 2, z], [4, 2, z], [4, 1, z], [5, 1, z]], 'right'); break;
+      case 3: b.pathArrow([[4, 3, z], [4, 4, z], [5, 4, z], [5, 5, z]], 'down'); break;
+      case 5: b.pathArrow([[3, 4, z], [2, 4, z], [2, 5, z], [1, 5, z]], 'left'); break;
+      case 7: b.pathArrow([[2, 3, z], [2, 2, z], [1, 2, z], [1, 1, z]], 'up'); break;
+    }
+  };
+  for (let z = 0; z < 10; z++) {
+    const a = z % 8;              // strand A rotates 45 degrees per layer
+    const bDir = (a + 4) % 8;     // strand B is always 180 degrees opposite
+    // On straight layers, alternate which strand carries the inward bond.
+    const aInward = z % 4 === 0;
+    arm(a, z, aInward);
+    arm(bDir, z, !aInward);
+  }
+  b.weaveLayers();
+  return b.build({ t: 40, m: 340 });
+}
+
+// Level 30 — "Hollow Pyramid" (displayed as 10). Four shells: a 2×2 apex
+// over three concentric hollow rings (4×4, 6×6, 8×8 perimeters). Every ring
+// arrow runs ALONG its edge — never across the hollow interior — so no
+// sweep ever crosses the void (real-gap safe). Corner spans step down
+// through the shells (the pyramid's inner staircase: their lower cell sits
+// one step inside the ring below), and each ring's sides chain into its
+// corner spans, so the shell drains corner by corner.
+function build3DLevel30() {
+  const b = Builder3D(30, 'Level 30', 'hard');
+  // Apex z0 (x3-4, y3-4): corner (3,3) is the staircase top; the other
+  // three cells form one bent arrow that exits west.
+  b.pathArrow([[4, 3, 0], [4, 4, 0], [3, 4, 0]], 'left');
+  // Staircase spans. Lower cells sit inside the next ring's hollow and
+  // sweep out through empty air below the pyramid (or beside it), so all
+  // spans are free once tapped; the rings chain INTO them.
+  b.verticalSpan(3, 3, 0, 1, 'below');   // S1: apex → ring-1 hole
+  b.verticalSpan(2, 2, 1, 2, 'below');   // S2: ring-1 corner → ring-2 hole
+  b.verticalSpan(5, 5, 1, 2, 'below');   // S3: ring-1 corner → ring-2 hole
+  b.verticalSpan(1, 1, 2, 3, 'below');   // S4: ring-2 corner → ring-3 hole
+  b.verticalSpan(6, 6, 2, 3, 'below');   // S5: ring-2 corner → ring-3 hole
+  // Ring 1 (z1, perimeter of x2-5 / y2-5; corners (2,2) and (5,5) belong to
+  // S2/S3). Every side chains into a staircase corner.
+  b.rowArrow([3, 4, 5], 2, 1, 'left');   // north → S2
+  b.colArrow([3, 4], 5, 1, 'down');      // east → S3
+  b.rowArrow([2, 3, 4], 5, 1, 'right');  // south → S3
+  b.colArrow([3, 4], 2, 1, 'up');        // west → S2
+  // Ring 2 (z2, perimeter of x1-6 / y1-6; corners (1,1) and (6,6) belong to
+  // S4/S5).
+  b.rowArrow([2, 3], 1, 2, 'left');      // north-west → S4
+  b.rowArrow([4, 5, 6], 1, 2, 'right');  // north-east → exits
+  b.colArrow([2, 3], 6, 2, 'down');      // east upper → chains into lower
+  b.colArrow([4, 5], 6, 2, 'down');      // east lower → S5
+  b.rowArrow([1, 2], 6, 2, 'right');     // south-west → chains east into S5
+  b.rowArrow([3, 4, 5], 6, 2, 'right');  // south-east → S5
+  b.colArrow([2, 3], 1, 2, 'up');        // west upper → S4
+  b.colArrow([4, 5], 1, 2, 'up');        // west lower → chains through upper
+  // Ring 3 (z3, perimeter of x0-7 / y0-7; corners assigned rotationally).
+  // Chains run clockwise (W→N→E→S) and drain at the free south-east arrow —
+  // the south side must NOT chain onward into the west, or the ring's
+  // dependencies close into a circle and deadlock.
+  b.rowArrow([0, 1, 2], 0, 3, 'right');    // north-west, chains east
+  b.rowArrow([3, 4, 5, 6], 0, 3, 'right'); // chains into the east col
+  b.colArrow([0, 1, 2], 7, 3, 'down');     // east upper, chains south
+  b.colArrow([3, 4, 5, 6], 7, 3, 'down');  // chains into the south side
+  b.rowArrow([5, 6, 7], 7, 3, 'right');    // south-east: FREE (exits past x8)
+  b.rowArrow([1, 2, 3, 4], 7, 3, 'right'); // chains into the free arrow
+  b.colArrow([5, 6, 7], 0, 3, 'up');       // west, chains north
+  b.colArrow([1, 2, 3, 4], 0, 3, 'up');    // chains into the north row
+  b.weaveLayers();
+  return b.build({ t: 35, m: 360 });
+}
+
 function build3DLevels() {
   return [
     build3DLevel21(), build3DLevel22(), build3DLevel23(),
-    build3DLevel24(), build3DLevel25(),
+    build3DLevel24(), build3DLevel25(), build3DLevel26(),
+    build3DLevel27(), build3DLevel28(), build3DLevel29(),
+    build3DLevel30(),
   ];
 }
 
@@ -1493,7 +1739,7 @@ function runGenerate2D() {
 }
 
 function runGenerate3D() {
-  console.log('MODE: --generate-3d (levels 21-25; writes manual_levels_3d.json)\n');
+  console.log('MODE: --generate-3d (levels 21-30; writes manual_levels_3d.json)\n');
   const levels = build3DLevels();
   console.log();
   const allOk = validateAll(levels, '3d');

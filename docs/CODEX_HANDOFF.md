@@ -2153,3 +2153,84 @@ Chosen as Option 2 of a Phase 24.1 audit (P24 had explicitly rejected a file spl
 ### Next Recommended Phase
 
 Manual on-device/emulator validation of 2D and 3D gameplay end-to-end now that levels load from two separate assets.
+
+## Phase 25 — 3D Figure Levels 26–30 (Cross, Star, Cat, Helix, Hollow Pyramid) (2026-07-11)
+
+### Context
+
+With Phase 24's game-mode split in place (3D levels live in
+`manual_levels_3d.json`, internally 21+, displayed as 3D 1+ via
+`displayNumberFor`), the 3D mode grows from 5 to 10 levels. The five new
+levels are figure-shaped: 26 "3D Cross", 27 "3D Star", 28 "Abstract Cat",
+29 "Double Helix", 30 "Hollow Pyramid" — internally 26–30, displayed as 3D
+levels 6–10 with zero display-layer changes (the mapping is arithmetic).
+
+### What Changed
+
+- **`tool/gen_levels.js`**: two new `Builder3D` helpers — `zColArrow`
+  (straight vertical arrows spanning ≥2 layers) and `pathArrow` (free-form
+  bent arrows stepping across layers, used for staircase rays and the cat's
+  tail) — plus five deterministic builders `build3DLevel26..30` wired into
+  `build3DLevels()`. Shape/gameplay notes live as comments on each builder.
+- **`assets/levels/manual_levels_3d.json`**: regenerated — levels 21–25
+  byte-identical (verified against HEAD), 26–30 appended. All 10: hard,
+  comp=1, no free/shared nodes, no single-node arrows, greedy-solvable,
+  no real-gap exits. Arrow counts 20–42; layer counts 2–8.
+- **`lib/core/config/app_config.dart`**: `manualLevelCount` 25 → 30 (the 3D
+  ceiling via `maxInternalLevelFor`; 2D stays capped by `twoDLevelCount`).
+- **`test/features/game/infrastructure/manual_levels_test.dart`**: merged-set
+  literals 25 → 30 (+`manual-030`), 3D group widened to 21–30 (hasLength 10).
+
+### Design notes — shape-first rework (user rejected the first pass)
+
+The first versions of 26-29 were built solver-first and did not read as
+their figures on screen (only the hollow pyramid did). All four were
+redesigned around the canonical geometry, then the game structure was fit
+inside the shape:
+
+- **26 Cross**: was three stacked plus-plates; now ONE true 3D cross — a
+  2-thick plus plate at z2 with a 2×2 post punched through its center,
+  z0-z4 (three orthogonal bars, one shared intersection).
+- **27 Star**: was planar rays + decoration; now a starburst — octahedral
+  core (3×3 mid + plus caps) radiating 14 spikes: ±x/±y/±z straight, plus
+  4 rising and 4 falling bent spikes.
+- **28 Cat**: was a front-facing blob; now the iconic SITTING side profile
+  (haunch back-left, head front-top, two upright ear columns, tail hugging
+  the back edge with an inward hook), per pixel/voxel-cat conventions
+  (ears + tail + silhouette = recognizability).
+- **29 Helix**: was rotating square edges (a tunnel); now true DNA — two
+  arms orbiting the axis column at 45°/layer over 10 layers, 180° apart;
+  axis-aligned layers form straight "base pair" bond lines through the
+  axis (one arm inward/blocked, one outward/free), diagonal layers are
+  bent elbows.
+- **30 Hollow Pyramid**: unchanged (it read correctly).
+
+Validator catches across both passes: disconnected vertical segment groups
+(every non-adjacent vertical piece pair needs an explicit connectivity
+z-edge — hit three times), head-on pairs across a carved column, and a
+ring whose four sides chained in a full circle (a chain loop needs a free
+drain). Silhouettes were verified by ASCII-rendering every layer from the
+generated JSON before handing over — the step whose absence caused the
+first-pass rejection.
+
+### Verification Results
+
+- `node tool/gen_levels.js --generate-3d`: ALL VALID, wrote 21–30
+  (21–25 byte-identical); `--validate-only`: both sets ALL VALID.
+- Per-layer ASCII silhouette render of 26–29: all four figures read.
+- `flutter analyze`: no issues.
+- `flutter test`: 207/207 passed.
+- Manual on-device validation pending: figures read correctly under orbit
+  (cross planes, star rays, cat silhouette from the front at yaw≈0, helix
+  strands + corner bonds, pyramid shell), and the display numbering shows
+  3D 6–10 in the Challenges/3D list.
+
+### Limitations
+
+- The user-requested "start node / end node / path" framing does not map to
+  this game's mechanics; "solvability" is implemented as the established
+  greedy-exit model (every arrow can eventually escape).
+- The cat reads best from the front (yaw ≈ 0); at extreme yaw it is
+  abstract, as 2-layer sculptures are.
+- 26–30 average fewer arrows than a dense 2D hard level by design — 3D
+  orbiting adds difficulty on its own; tune per playtest feedback.
