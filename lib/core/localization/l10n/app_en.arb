@@ -71,6 +71,7 @@
   "gameOverMessage": "You ran out of lives.",
   "mistakes": "Mistakes",
   "resetView": "Reset view",
+  "dragToRotate": "Drag to rotate • pinch to zoom",
   "challengeTimeAttack": "Time Attack",
   "challengeTimeAttackDescription": "Beat the level before the clock runs out.",
   "challengeMoveLimit": "Move Limit",

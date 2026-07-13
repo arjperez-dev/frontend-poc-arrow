@@ -828,6 +828,41 @@ function Builder3D(number, name, difficulty) {
         if (this._nodes.has(right)) this.addEdge(id, right);
       }
     },
+    // Split a sorted run of ints into contiguous groups of `size` (a trailing
+    // singleton is merged back so no group is length 1).
+    _chunk(run, size) {
+      const out = [];
+      for (let i = 0; i < run.length; i += size) out.push(run.slice(i, i + size));
+      if (out.length > 1 && out[out.length - 1].length === 1) {
+        const last = out.pop(); out[out.length - 1].push(...last);
+      }
+      return out;
+    },
+    _runs(vals) {
+      const s = [...new Set(vals)].sort((a, b) => a - b);
+      const runs = []; let run = [s[0]];
+      for (let k = 1; k < s.length; k++) {
+        if (s[k] === s[k - 1] + 1) run.push(s[k]);
+        else { runs.push(run); run = [s[k]]; }
+      }
+      runs.push(run); return runs;
+    },
+    // Fill a row (fixed y,z) over x cells with a QUEUE of disjoint same-direction
+    // arrows (deeper queue = more forced ordering). Splits automatically at gaps
+    // and into groups of `size` (default 2). Every run must be length >= 2.
+    queueRow(xs, y, z, direction, size = 2) {
+      for (const run of this._runs(xs)) {
+        if (run.length < 2) throw new Error(`queueRow run <2 at y${y} z${z}: ${run}`);
+        for (const c of this._chunk(run, size)) this.rowArrow(c, y, z, direction);
+      }
+    },
+    // Fill a column (fixed x,z) over y cells with a queue of disjoint arrows.
+    queueCol(ys, x, z, direction, size = 2) {
+      for (const run of this._runs(ys)) {
+        if (run.length < 2) throw new Error(`queueCol run <2 at x${x} z${z}: ${run}`);
+        for (const c of this._chunk(run, size)) this.colArrow(c, x, z, direction);
+      }
+    },
     build(meta) {
       const nm = this._nodes;
       return {
@@ -848,60 +883,78 @@ function Builder3D(number, name, difficulty) {
   };
 }
 
-// Level 21 — two 5×4 layers, 20 arrows. Introduction to spanning verticals:
-// each vertical occupies one cell on BOTH layers (tapping it frees two cells
-// at once) and exits immediately; four planar arrows point INTO a vertical's
-// column and are blocked until it (and the outer arrows beyond it) escape.
+// Level 21 — three full 6×5 layers, ~40 arrows. Hardened intro: six spanning
+// columns thread all three layers, each parked at the tail end of its row so
+// no planar queue ever sweeps into it (keeps the board acyclic and solvable),
+// while every vertical's head sweep lands on a covered blocker cell one layer
+// away (depth-2), and those blockers sit mid-queue (depth-3). Two center
+// columns (2,2)/(3,2) are punched through the middle with the y2 rows split to
+// sweep outward around them.
 function build3DLevel21() {
   const b = Builder3D(21, 'Level 21', 'hard');
-  // Vertical spans at column x=2 (heads alternate above/below).
-  b.verticalSpan(2, 0, 1, 0, 'above');
-  b.verticalSpan(2, 1, 0, 1, 'below');
-  b.verticalSpan(2, 2, 1, 0, 'above');
-  b.verticalSpan(2, 3, 0, 1, 'below');
-  // Layer 0 (top): rows around the vertical column.
-  b.rowArrow([0, 1], 0, 0, 'left'); b.rowArrow([3, 4], 0, 0, 'right');
-  b.rowArrow([0, 1], 1, 0, 'right'); b.rowArrow([3, 4], 1, 0, 'right'); // [0,1]→ waits on V@x2 then [3,4]→
-  b.rowArrow([0, 1], 2, 0, 'left'); b.rowArrow([3, 4], 2, 0, 'left');   // [3,4]← waits on V@x2 then [0,1]←
-  b.rowArrow([0, 1], 3, 0, 'left'); b.rowArrow([3, 4], 3, 0, 'right');
-  // Layer 1 (bottom).
-  b.rowArrow([0, 1], 0, 1, 'left'); b.rowArrow([3, 4], 0, 1, 'right');
-  b.rowArrow([0, 1], 1, 1, 'left'); b.rowArrow([3, 4], 1, 1, 'left');   // [3,4]← waits on V@x2 then [0,1]←
-  b.rowArrow([0, 1], 2, 1, 'right'); b.rowArrow([3, 4], 2, 1, 'right'); // [0,1]→ waits on V@x2 then [3,4]→
-  b.rowArrow([0, 1], 3, 1, 'left'); b.rowArrow([3, 4], 3, 1, 'right');
+  // Spanning columns (all heads land on a planar blocker one layer over).
+  b.verticalSpan(0, 0, 0, 1, 'below');  // V1: head z1 → (0,0,z2)
+  b.verticalSpan(5, 1, 2, 1, 'above');  // V2: head z1 → (5,1,z0)
+  b.verticalSpan(2, 2, 0, 1, 'below');  // V3: head z1 → (2,2,z2)
+  b.verticalSpan(3, 2, 2, 1, 'above');  // V4: head z1 → (3,2,z0)
+  b.verticalSpan(5, 3, 0, 1, 'below');  // V5: head z1 → (5,3,z2)
+  b.verticalSpan(0, 4, 2, 1, 'above');  // V6: head z1 → (0,4,z0)
+  // z0 (carved (0,0),(2,2),(5,3)).
+  b.queueRow([1, 2, 3, 4, 5], 0, 0, 'right');
+  b.queueRow([0, 1, 2, 3, 4, 5], 1, 0, 'left');
+  b.queueRow([0, 1], 2, 0, 'left'); b.queueRow([3, 4, 5], 2, 0, 'right');
+  b.queueRow([0, 1, 2, 3, 4], 3, 0, 'left');
+  b.queueRow([0, 1, 2, 3, 4, 5], 4, 0, 'right');
+  // z1 (carved (0,0),(5,1),(2,2),(3,2),(5,3),(0,4)).
+  b.queueRow([1, 2, 3, 4, 5], 0, 1, 'right');
+  b.queueRow([0, 1, 2, 3, 4], 1, 1, 'left');
+  b.queueRow([0, 1], 2, 1, 'left'); b.queueRow([4, 5], 2, 1, 'right');
+  b.queueRow([0, 1, 2, 3, 4], 3, 1, 'left');
+  b.queueRow([1, 2, 3, 4, 5], 4, 1, 'right');
+  // z2 (carved (5,1),(3,2),(0,4)).
+  b.queueRow([0, 1, 2, 3, 4, 5], 0, 2, 'right');
+  b.queueRow([0, 1, 2, 3, 4], 1, 2, 'left');
+  b.queueRow([0, 1, 2], 2, 2, 'left'); b.queueRow([4, 5], 2, 2, 'right');
+  b.queueRow([0, 1, 2, 3, 4, 5], 3, 2, 'left');
+  b.queueRow([1, 2, 3, 4, 5], 4, 2, 'right');
   b.weaveLayers();
-  return b.build({ t: 50, m: 260 });
+  return b.build({ t: 50, m: 300 });
 }
 
-// Level 22 — three 5×4 layers, 28 arrows. Verticals span adjacent layers and
-// their head sweeps cross the remaining layer: V1 (top↔mid, head down) must
-// wait for the bottom cell beneath it; V2 (bottom↔mid, head up) for the top
-// cell above it; V3/V4 likewise; several planar arrows point into vertical
-// columns, so dependencies cross layers in both directions.
+// Level 22 — three full 6×6 layers, ~44 arrows, COLUMN-oriented (contrasting
+// 21's rows): every layer is filled with vertical-in-plane queues (even x
+// down, odd x up). Six spanning columns thread the layers, each parked at the
+// tail (top for down-columns, bottom for up-columns) so no planar queue sweeps
+// into it — acyclic and solvable — while each vertical head lands on a covered
+// blocker one layer away. Two bent cross-layer feet protrude at the base for
+// arrow-shape variety (they exit through empty air, so they stay free).
 function build3DLevel22() {
   const b = Builder3D(22, 'Level 22', 'hard');
-  // Vertical spans.
-  b.verticalSpan(2, 0, 0, 1, 'below');  // V1: blocked by (2,0,2)
-  b.verticalSpan(2, 3, 2, 1, 'above');  // V2: blocked by (2,3,0)
-  b.verticalSpan(0, 2, 0, 1, 'below');  // V3: blocked by (0,2,2)
-  b.verticalSpan(4, 1, 2, 1, 'above');  // V4: blocked by (4,1,0)
-  // Layer 0 (top). Carved: (2,0), (0,2).
-  b.rowArrow([0, 1], 0, 0, 'left'); b.rowArrow([3, 4], 0, 0, 'right');
-  b.rowArrow([0, 1, 2], 1, 0, 'left'); b.rowArrow([3, 4], 1, 0, 'right');
-  b.rowArrow([1, 2], 2, 0, 'left'); b.rowArrow([3, 4], 2, 0, 'right');   // [1,2]← waits on V3
-  b.rowArrow([0, 1], 3, 0, 'left'); b.rowArrow([2, 3, 4], 3, 0, 'right');
-  // Layer 1 (middle). Carved: (2,0), (2,3), (0,2), (4,1).
-  b.rowArrow([0, 1], 0, 1, 'left'); b.rowArrow([3, 4], 0, 1, 'right');
-  b.rowArrow([0, 1], 1, 1, 'left'); b.rowArrow([2, 3], 1, 1, 'right');   // [2,3]→ waits on V4
-  b.rowArrow([1, 2], 2, 1, 'left'); b.rowArrow([3, 4], 2, 1, 'right');   // [1,2]← waits on V3
-  b.rowArrow([0, 1], 3, 1, 'left'); b.rowArrow([3, 4], 3, 1, 'right');
-  // Layer 2 (bottom). Carved: (2,3), (4,1).
-  b.rowArrow([0, 1, 2], 0, 2, 'left'); b.rowArrow([3, 4], 0, 2, 'right');
-  b.rowArrow([0, 1], 1, 2, 'left'); b.rowArrow([2, 3], 1, 2, 'right');   // [2,3]→ waits on V4
-  b.rowArrow([0, 1, 2], 2, 2, 'left'); b.rowArrow([3, 4], 2, 2, 'right');
-  b.rowArrow([0, 1], 3, 2, 'left'); b.rowArrow([3, 4], 3, 2, 'right');
+  // Spanning columns (heads land on a planar blocker one layer over).
+  b.verticalSpan(0, 0, 0, 1, 'below');  // V1: head z1 → (0,0,z2)
+  b.verticalSpan(2, 0, 0, 1, 'below');  // V2: head z1 → (2,0,z2)
+  b.verticalSpan(4, 0, 2, 1, 'above');  // V3: head z1 → (4,0,z0)
+  b.verticalSpan(1, 5, 0, 1, 'below');  // V4: head z1 → (1,5,z2)
+  b.verticalSpan(3, 5, 2, 1, 'above');  // V5: head z1 → (3,5,z0)
+  b.verticalSpan(5, 5, 2, 1, 'above');  // V6: head z1 → (5,5,z0)
+  // z0 (carved (0,0),(2,0),(1,5)).
+  b.queueCol([1, 2, 3, 4, 5], 0, 0, 'down'); b.queueCol([0, 1, 2, 3, 4], 1, 0, 'up');
+  b.queueCol([1, 2, 3, 4, 5], 2, 0, 'down'); b.queueCol([0, 1, 2, 3, 4, 5], 3, 0, 'up');
+  b.queueCol([0, 1, 2, 3, 4, 5], 4, 0, 'down'); b.queueCol([0, 1, 2, 3, 4, 5], 5, 0, 'up');
+  // z1 (carved (0,0),(2,0),(4,0),(1,5),(3,5),(5,5)).
+  b.queueCol([1, 2, 3, 4, 5], 0, 1, 'down'); b.queueCol([0, 1, 2, 3, 4], 1, 1, 'up');
+  b.queueCol([1, 2, 3, 4, 5], 2, 1, 'down'); b.queueCol([0, 1, 2, 3, 4], 3, 1, 'up');
+  b.queueCol([1, 2, 3, 4, 5], 4, 1, 'down'); b.queueCol([0, 1, 2, 3, 4], 5, 1, 'up');
+  // z2 (carved (4,0),(3,5),(5,5)).
+  b.queueCol([0, 1, 2, 3, 4, 5], 0, 2, 'down'); b.queueCol([0, 1, 2, 3, 4, 5], 1, 2, 'up');
+  b.queueCol([0, 1, 2, 3, 4, 5], 2, 2, 'down'); b.queueCol([0, 1, 2, 3, 4], 3, 2, 'up');
+  b.queueCol([1, 2, 3, 4, 5], 4, 2, 'down'); b.queueCol([0, 1, 2, 3, 4], 5, 2, 'up');
+  // Bent cross-layer feet: rise a layer then hook out the bottom edge (head
+  // 'above' sweeps to z=-1 → off the board, so both are free).
+  b.pathArrow([[2, 6, 1], [2, 6, 0]], 'above'); // simple protruding vertical foot
+  b.pathArrow([[4, 6, 0], [4, 6, 1], [3, 6, 1]], 'left'); // bent foot, exits left
   b.weaveLayers();
-  return b.build({ t: 45, m: 280 });
+  return b.build({ t: 45, m: 300 });
 }
 
 // Level 23 — "Pyramid": four concentric stepped tiers, 2×2 (z0) / 4×4 (z1)
@@ -919,27 +972,32 @@ function build3DLevel23() {
   b.verticalSpan(4, 3, 2, 1, 'above');
   b.verticalSpan(3, 4, 2, 1, 'above');
   b.verticalSpan(4, 4, 2, 1, 'above');
-  // Tier z1 ring (4×4 at x2-5, y2-5, minus the 4 core cells).
-  b.colArrow([2, 3], 2, 1, 'up'); b.colArrow([4, 5], 2, 1, 'down');
-  b.colArrow([2, 3], 5, 1, 'up'); b.colArrow([4, 5], 5, 1, 'down');
-  b.rowArrow([3, 4], 2, 1, 'right');  // waits on col x5
-  b.rowArrow([3, 4], 5, 1, 'left');   // waits on col x2
+  // Tier z1 ring (4×4 at x2-5, y2-5, minus the 4 core cells). Rows diverge
+  // outward; the side columns chain into the rows.
+  b.rowArrow([2, 3], 2, 1, 'left'); b.rowArrow([4, 5], 2, 1, 'right');
+  b.rowArrow([2, 3], 5, 1, 'left'); b.rowArrow([4, 5], 5, 1, 'right');
+  b.colArrow([3, 4], 2, 1, 'up');    // waits on row y2 (2,2)
+  b.colArrow([3, 4], 5, 1, 'down');  // waits on row y5 (5,5)
   // Tier z2 (6×6 at x1-6, y1-6, minus 4 core span tails and 2 z2↔z3 spans).
+  // Edge rows diverge outward; the two inner rows (y3,y4) sweep unidirectionally
+  // THROUGH the core span tails — so their inner arrow must wait for a core span
+  // (which itself waits for the apex): a three-deep cross-layer chain.
   b.rowArrow([1, 2], 1, 2, 'left'); b.rowArrow([4, 5, 6], 1, 2, 'right');
   b.rowArrow([1, 2, 3], 2, 2, 'left'); b.rowArrow([4, 5, 6], 2, 2, 'right');
-  b.rowArrow([1, 2], 3, 2, 'left'); b.rowArrow([5, 6], 3, 2, 'right');
-  b.rowArrow([1, 2], 4, 2, 'left'); b.rowArrow([5, 6], 4, 2, 'right');
+  b.rowArrow([1, 2], 3, 2, 'right'); b.rowArrow([5, 6], 3, 2, 'right');  // [1,2]→ waits cores + [5,6]
+  b.rowArrow([1, 2], 4, 2, 'left'); b.rowArrow([5, 6], 4, 2, 'left');    // [5,6]← waits cores + [1,2]
   b.rowArrow([1, 2, 3], 5, 2, 'left'); b.rowArrow([4, 5, 6], 5, 2, 'right');
   b.rowArrow([1, 2, 3], 6, 2, 'left'); b.rowArrow([5, 6], 6, 2, 'right');
-  // Base tier z3 (8×8, minus 2 z2↔z3 span cells).
-  b.rowArrow([0, 1, 2, 3], 0, 3, 'left'); b.rowArrow([4, 5, 6, 7], 0, 3, 'right');
-  b.rowArrow([0, 1, 2], 1, 3, 'left'); b.rowArrow([4, 5, 6, 7], 1, 3, 'right');
-  b.rowArrow([0, 1, 2, 3], 2, 3, 'left'); b.rowArrow([4, 5, 6, 7], 2, 3, 'right');
-  b.rowArrow([0, 1, 2, 3], 3, 3, 'left'); b.rowArrow([4, 5, 6, 7], 3, 3, 'right');
-  b.rowArrow([0, 1, 2, 3], 4, 3, 'left'); b.rowArrow([4, 5, 6, 7], 4, 3, 'right');
-  b.rowArrow([0, 1, 2, 3], 5, 3, 'left'); b.rowArrow([4, 5, 6, 7], 5, 3, 'right');
-  b.rowArrow([0, 1, 2, 3], 6, 3, 'left'); b.rowArrow([5, 6, 7], 6, 3, 'right');
-  b.rowArrow([0, 1, 2, 3], 7, 3, 'left'); b.rowArrow([4, 5, 6, 7], 7, 3, 'right');
+  // Base tier z3 (8×8, minus 2 z2↔z3 span cells) — deep 3-cell queues, one
+  // direction per row (alternating), so the base itself is a forced ordering.
+  b.queueRow([0, 1, 2, 3, 4, 5, 6, 7], 0, 3, 'right', 3);
+  b.queueRow([0, 1, 2, 4, 5, 6, 7], 1, 3, 'left', 3);   // (3,1) carved (z2↔z3 span)
+  b.queueRow([0, 1, 2, 3, 4, 5, 6, 7], 2, 3, 'right', 3);
+  b.queueRow([0, 1, 2, 3, 4, 5, 6, 7], 3, 3, 'left', 3);
+  b.queueRow([0, 1, 2, 3, 4, 5, 6, 7], 4, 3, 'right', 3);
+  b.queueRow([0, 1, 2, 3, 4, 5, 6, 7], 5, 3, 'left', 3);
+  b.queueRow([0, 1, 2, 3, 5, 6, 7], 6, 3, 'right', 3);  // (4,6) carved (z2↔z3 span)
+  b.queueRow([0, 1, 2, 3, 4, 5, 6, 7], 7, 3, 'left', 3);
   // Tier-linking spans z2↔z3 (heads at z2 pointing above exit through the
   // empty air beside the smaller tiers — free, they exist for the shape's
   // vertical silhouette and connectivity).
@@ -967,28 +1025,41 @@ function build3DLevel24() {
   b.colArrow([2, 3], 3, 4, 'down');
   b.verticalSpan(2, 2, 4, 3, 'above');  // waits on the z1↔z2 span above it
   b.verticalSpan(2, 3, 4, 3, 'above');
-  // Upper-mid tier z1 (4×4 at x1-4): ring + center (left = z1↔z2 spans
-  // blocked by the top tip, right = the z0↔z1 span bottoms).
+  // Full center span lattice (the octahedron's core): every center-column cell
+  // across all five tiers is a span, chained tip→equator→tip.
   b.verticalSpan(2, 2, 2, 1, 'above');  // blocked by top tip (2,2,0)
   b.verticalSpan(2, 3, 2, 1, 'above');  // blocked by top tip (2,3,0)
-  b.colArrow([1, 2], 1, 1, 'up'); b.colArrow([3, 4], 1, 1, 'down');
-  b.colArrow([1, 2], 4, 1, 'up'); b.colArrow([3, 4], 4, 1, 'down');
-  b.rowArrow([2, 3], 1, 1, 'right');  // waits on col x4
-  b.rowArrow([2, 3], 4, 1, 'left');   // waits on col x1
-  // Lower-mid tier z3: mirror (right = z2↔z3 spans blocked by bottom tip).
   b.verticalSpan(3, 2, 2, 3, 'below');  // blocked by bottom tip (3,2,4)
   b.verticalSpan(3, 3, 2, 3, 'below');  // blocked by bottom tip (3,3,4)
-  b.colArrow([1, 2], 1, 3, 'up'); b.colArrow([3, 4], 1, 3, 'down');
-  b.colArrow([1, 2], 4, 3, 'up'); b.colArrow([3, 4], 4, 3, 'down');
-  b.rowArrow([2, 3], 1, 3, 'right');
-  b.rowArrow([2, 3], 4, 3, 'left');
-  // Equator z2 (6×6 at x0-5, minus the 4 center span cells).
-  b.rowArrow([0, 1, 2], 0, 2, 'left'); b.rowArrow([3, 4, 5], 0, 2, 'right');
-  b.rowArrow([0, 1, 2], 1, 2, 'left'); b.rowArrow([3, 4, 5], 1, 2, 'right');
-  b.rowArrow([0, 1], 2, 2, 'right'); b.rowArrow([4, 5], 2, 2, 'right');  // [0,1]→ threads the span lattice
-  b.rowArrow([0, 1], 3, 2, 'left'); b.rowArrow([4, 5], 3, 2, 'left');    // [4,5]← threads it the other way
-  b.rowArrow([0, 1, 2], 4, 2, 'left'); b.rowArrow([3, 4, 5], 4, 2, 'right');
-  b.rowArrow([0, 1, 2], 5, 2, 'left'); b.rowArrow([3, 4, 5], 5, 2, 'right');
+  // Upper-mid tier z1 (4×4 at x1-4, minus center): ring rows diverge, side
+  // columns chain into them.
+  b.rowArrow([1, 2], 1, 1, 'left'); b.rowArrow([3, 4], 1, 1, 'right');
+  b.rowArrow([1, 2], 4, 1, 'left'); b.rowArrow([3, 4], 4, 1, 'right');
+  b.colArrow([2, 3], 1, 1, 'up');    // waits on row y1
+  b.colArrow([2, 3], 4, 1, 'down');  // waits on row y4
+  // Lower-mid tier z3: mirror.
+  b.rowArrow([1, 2], 1, 3, 'left'); b.rowArrow([3, 4], 1, 3, 'right');
+  b.rowArrow([1, 2], 4, 3, 'left'); b.rowArrow([3, 4], 4, 3, 'right');
+  b.colArrow([2, 3], 1, 3, 'up');
+  b.colArrow([2, 3], 4, 3, 'down');
+  // Equator z2 (6×6 at x0-5, minus the 4 center span cells) — deeper 2-cell
+  // queues; outer rows are deep one-way queues, the two inner rows diverge
+  // around the center lattice.
+  b.queueRow([0, 1, 2, 3, 4, 5], 0, 2, 'right');
+  b.queueRow([0, 1, 2, 3, 4, 5], 1, 2, 'left');
+  b.queueRow([0, 1], 2, 2, 'left'); b.queueRow([4, 5], 2, 2, 'right');
+  b.queueRow([0, 1], 3, 2, 'left'); b.queueRow([4, 5], 3, 2, 'right');
+  b.queueRow([0, 1, 2, 3, 4, 5], 4, 2, 'right');
+  b.queueRow([0, 1, 2, 3, 4, 5], 5, 2, 'left');
+  // Bent faceting nubs protruding off the equator (arrow-shape variety; they
+  // exit through empty air, so they stay free).
+  b.pathArrow([[6, 1, 2], [6, 2, 2], [7, 2, 2]], 'right');
+  b.pathArrow([[6, 4, 2], [6, 3, 2], [7, 3, 2]], 'right');
+  b.pathArrow([[1, 6, 2], [2, 6, 2], [2, 7, 2]], 'down');
+  b.pathArrow([[4, 6, 2], [3, 6, 2], [3, 7, 2]], 'down');
+  // Center-column connectivity between the disjoint span pieces.
+  b.addEdge(nid3(2, 2, 2), nid3(2, 2, 3)); b.addEdge(nid3(2, 3, 2), nid3(2, 3, 3));
+  b.addEdge(nid3(3, 2, 1), nid3(3, 2, 2)); b.addEdge(nid3(3, 3, 1), nid3(3, 3, 2));
   b.weaveLayers();
   return b.build({ t: 45, m: 320 });
 }
@@ -1000,30 +1071,40 @@ function build3DLevel24() {
 // and one row on each outer face points into the column and must wait.
 function build3DLevel25() {
   const b = Builder3D(25, 'Level 25', 'hard');
-  // Center-column spans.
-  b.verticalSpan(2, 1, 1, 0, 'above');  // A: exits up out of the top cone
-  b.verticalSpan(2, 3, 1, 0, 'above');  // E: exits up out of the top cone
-  b.verticalSpan(2, 2, 1, 2, 'below');  // W: threads the waist, waits on G
-  b.verticalSpan(2, 2, 3, 4, 'below');  // G: exits down, frees the neck
-  b.verticalSpan(2, 1, 3, 4, 'below');  // F: exits down out of the bottom cone
-  b.verticalSpan(2, 3, 3, 4, 'below');  // B: exits down out of the bottom cone
-  // Top 5×5 (minus (2,1) and (2,3) = A/E tops).
-  b.rowArrow([0, 1, 2], 0, 0, 'left'); b.rowArrow([3, 4], 0, 0, 'right');
-  b.rowArrow([0, 1], 1, 0, 'left'); b.rowArrow([3, 4], 1, 0, 'left');   // [3,4]← waits on A
-  b.rowArrow([0, 1], 2, 0, 'left'); b.rowArrow([2, 3, 4], 2, 0, 'right');
-  b.rowArrow([0, 1], 3, 0, 'left'); b.rowArrow([3, 4], 3, 0, 'right');
-  b.rowArrow([0, 1, 2], 4, 0, 'left'); b.rowArrow([3, 4], 4, 0, 'right');
-  // Waist cones (3×3 at x1-3, y1-3; the x=2 column is all span cells).
-  b.colArrow([1, 2, 3], 1, 1, 'down'); b.colArrow([1, 2, 3], 3, 1, 'up');
-  b.colArrow([1, 2, 3], 1, 3, 'up'); b.colArrow([1, 2, 3], 3, 3, 'down');
-  // Bottom 5×5 (minus (2,1) and (2,3) = F/B bottoms).
-  b.rowArrow([0, 1, 2], 0, 4, 'left'); b.rowArrow([3, 4], 0, 4, 'right');
-  b.rowArrow([0, 1], 1, 4, 'left'); b.rowArrow([3, 4], 1, 4, 'left');   // [3,4]← waits on F
-  b.rowArrow([0, 1], 2, 4, 'left'); b.rowArrow([3, 4], 2, 4, 'right');  // (2,2,4) is G's exit cell
-  b.rowArrow([0, 1], 3, 4, 'left'); b.rowArrow([3, 4], 3, 4, 'right');
-  b.rowArrow([0, 1, 2], 4, 4, 'left'); b.rowArrow([3, 4], 4, 4, 'right');
+  // Center-column spans (waist recentred at (3,3)).
+  b.verticalSpan(3, 2, 1, 0, 'above');  // A: exits up out of the top cone
+  b.verticalSpan(3, 4, 1, 0, 'above');  // E: exits up out of the top cone
+  b.verticalSpan(3, 3, 1, 2, 'below');  // W: threads the waist, waits on G
+  b.verticalSpan(3, 3, 3, 4, 'below');  // G: exits down, frees the neck
+  b.verticalSpan(3, 2, 3, 4, 'below');  // F: exits down out of the bottom cone
+  b.verticalSpan(3, 4, 3, 4, 'below');  // B: exits down out of the bottom cone
+  // Top 5×5 cap (x1-5, y1-5; carves (3,2)/(3,4)=A/E tops and the 4 corners
+  // taken by the bent flares) — deep queues.
+  b.queueRow([2, 3, 4], 1, 0, 'right');
+  b.queueRow([1, 2, 4, 5], 2, 0, 'left');
+  b.queueRow([1, 2, 3, 4, 5], 3, 0, 'right');
+  b.queueRow([1, 2, 4, 5], 4, 0, 'left');
+  b.queueRow([2, 3, 4], 5, 0, 'right');
+  // Bottom 5×5 cap (carves (3,2)/(3,4)=F/B, (3,3)=G exit cell, and 4 corners).
+  b.queueRow([2, 3, 4], 1, 4, 'right');
+  b.queueRow([1, 2, 4, 5], 2, 4, 'left');
+  b.queueRow([1, 2, 4, 5], 3, 4, 'right');
+  b.queueRow([1, 2, 4, 5], 4, 4, 'left');
+  b.queueRow([2, 3, 4], 5, 4, 'right');
+  // Waist cones (3×3 at x2-4, y2-4; the x=3 column is all span cells).
+  b.colArrow([2, 3, 4], 2, 1, 'down'); b.colArrow([2, 3, 4], 4, 1, 'up');
+  b.colArrow([2, 3, 4], 2, 3, 'up'); b.colArrow([2, 3, 4], 4, 3, 'down');
+  // Bent corner flares off both caps (arrow-shape variety): each hooks around a
+  // cap corner and exits straight off the true outer boundary, so all eight
+  // stay free with no gap-sweep.
+  for (const z of [0, 4]) {
+    b.pathArrow([[1, 1, z], [1, 0, z], [0, 0, z]], 'left');   // NW
+    b.pathArrow([[5, 1, z], [5, 0, z], [6, 0, z]], 'right');  // NE
+    b.pathArrow([[1, 5, z], [1, 6, z], [0, 6, z]], 'left');   // SW
+    b.pathArrow([[5, 5, z], [5, 6, z], [6, 6, z]], 'right');  // SE
+  }
   // Neck connectivity: the waist cell links down to G's top (unclaimed).
-  b.addEdge(nid3(2, 2, 2), nid3(2, 2, 3));
+  b.addEdge(nid3(3, 3, 2), nid3(3, 3, 3));
   b.weaveLayers();
   return b.build({ t: 40, m: 340 });
 }
@@ -1037,9 +1118,9 @@ function build3DLevel25() {
 // one direction only (no head-on pairs) and drains at a free outer arrow.
 function build3DLevel26() {
   const b = Builder3D(26, 'Level 26', 'hard');
-  // Post: 2×2 columns (x4-5, y4-5) spanning z0-z4; their z2 cells ARE the
+  // Post: 2×2 columns (x7-8, y7-8) spanning z0-z4; their z2 cells ARE the
   // plate's center. Each column pairs a free exit with a chained half.
-  for (const [x, y, freeTop] of [[4, 4, true], [5, 4, false], [4, 5, false], [5, 5, true]]) {
+  for (const [x, y, freeTop] of [[7, 7, true], [8, 7, false], [7, 8, false], [8, 8, true]]) {
     if (freeTop) {
       b.zColArrow([0, 1], x, y, 'above');      // exits up
       b.zColArrow([2, 3, 4], x, y, 'above');   // chains through it
@@ -1048,20 +1129,21 @@ function build3DLevel26() {
       b.zColArrow([0, 1], x, y, 'below');      // chains through it
     }
   }
-  // Plate at z2. X-bar rows y4 (all east) and y5 (all west); Y-bar cols
-  // x4 (all south) and x5 (all north). Inner arrows sweep across the post
-  // and the far half before exiting — back and forth through the center.
-  b.rowArrow([0, 1], 4, 2, 'right'); b.rowArrow([2, 3], 4, 2, 'right');
-  b.rowArrow([6, 7], 4, 2, 'right'); b.rowArrow([8, 9], 4, 2, 'right');
-  b.rowArrow([8, 9], 5, 2, 'left'); b.rowArrow([6, 7], 5, 2, 'left');
-  b.rowArrow([2, 3], 5, 2, 'left'); b.rowArrow([0, 1], 5, 2, 'left');
-  b.colArrow([0, 1], 4, 2, 'down'); b.colArrow([2, 3], 4, 2, 'down');
-  b.colArrow([6, 7], 4, 2, 'down'); b.colArrow([8, 9], 4, 2, 'down');
-  b.colArrow([8, 9], 5, 2, 'up'); b.colArrow([6, 7], 5, 2, 'up');
-  b.colArrow([2, 3], 5, 2, 'up'); b.colArrow([0, 1], 5, 2, 'up');
+  // Plate at z2: a 2-thick plus, each arm 8 long. X-bar rows y7 (east) and
+  // y8 (west); Y-bar cols x7 (south) and x8 (north). Deep queues on each arm
+  // half chain toward the post: the innermost arrow of every arm can only
+  // leave once the whole arm ahead of it and the post have cleared.
+  b.queueRow([0, 1, 2, 3, 4, 5, 6], 7, 2, 'right');
+  b.queueRow([9, 10, 11, 12, 13, 14, 15], 7, 2, 'right');
+  b.queueRow([0, 1, 2, 3, 4, 5, 6], 8, 2, 'left');
+  b.queueRow([9, 10, 11, 12, 13, 14, 15], 8, 2, 'left');
+  b.queueCol([0, 1, 2, 3, 4, 5, 6], 7, 2, 'down');
+  b.queueCol([9, 10, 11, 12, 13, 14, 15], 7, 2, 'down');
+  b.queueCol([0, 1, 2, 3, 4, 5, 6], 8, 2, 'up');
+  b.queueCol([9, 10, 11, 12, 13, 14, 15], 8, 2, 'up');
   // Post continuity: each column's two arrow pieces meet at z1/z2 with no
   // shared body edge — join them (unclaimed z-edges, like weave edges).
-  for (const [x, y] of [[4, 4], [5, 4], [4, 5], [5, 5]]) {
+  for (const [x, y] of [[7, 7], [8, 7], [7, 8], [8, 8]]) {
     b.addEdge(nid3(x, y, 1), nid3(x, y, 2));
   }
   b.weaveLayers();
@@ -1076,43 +1158,47 @@ function build3DLevel26() {
 // through the middle; every diagonal spike sweeps out into empty air.
 function build3DLevel27() {
   const b = Builder3D(27, 'Level 27', 'hard');
-  // Core mid layer z3: 3×3 at x4-6, y4-6 (center 5,5).
-  b.rowArrow([4, 5, 6], 4, 3, 'right');   // chains into the NE corner spike
-  b.rowArrow([4, 5, 6], 5, 3, 'left');    // chains west through the x spikes
-  b.rowArrow([4, 5, 6], 6, 3, 'right');   // chains into the SE corner spike
+  // Core mid layer z3: 3×3 at x6-8, y6-8 (center 7,7). Rows chain into the
+  // axis spikes on each side.
+  b.rowArrow([6, 7, 8], 6, 3, 'right');   // chains east
+  b.rowArrow([6, 7, 8], 7, 3, 'left');    // chains west
+  b.rowArrow([6, 7, 8], 8, 3, 'right');   // chains east
+  // Six long straight axis spikes (length 6 each = deep 3-arrow queues) along
+  // ±x/±y, radiating out to the board edge.
+  b.queueRow([0, 1, 2, 3, 4, 5], 7, 3, 'left');       // west
+  b.queueRow([9, 10, 11, 12, 13, 14], 7, 3, 'right');  // east
+  b.queueCol([0, 1, 2, 3, 4, 5], 7, 3, 'up');          // north
+  b.queueCol([9, 10, 11, 12, 13, 14], 7, 3, 'down');   // south
   // Caps z2/z4: a plus of 5 cells — a 3-cell column plus two tips owned by
   // the rising/falling cap spikes.
-  b.colArrow([4, 5, 6], 5, 2, 'up');
-  b.colArrow([4, 5, 6], 5, 4, 'down');
-  b.pathArrow([[4, 5, 2], [4, 5, 1], [3, 5, 1], [3, 5, 0]], 'above');  // W rising
-  b.pathArrow([[6, 5, 2], [6, 5, 1], [7, 5, 1], [7, 5, 0]], 'above');  // E rising
-  b.pathArrow([[4, 5, 4], [4, 5, 5], [3, 5, 5], [3, 5, 6]], 'below');  // W falling
-  b.pathArrow([[6, 5, 4], [6, 5, 5], [7, 5, 5], [7, 5, 6]], 'below');  // E falling
-  // Straight axis spikes (length 4, split free/chained) on the center lines.
-  b.rowArrow([0, 1], 5, 3, 'left');       // west outer: free
-  b.rowArrow([2, 3], 5, 3, 'left');       // west inner: chains through outer
-  b.rowArrow([7, 8], 5, 3, 'left');       // east inner: chains through the core
-  b.rowArrow([9, 10], 5, 3, 'left');      // east outer: chains through inner
-  b.colArrow([0, 1], 5, 3, 'up');         // north outer: free
-  b.colArrow([2, 3], 5, 3, 'up');         // north inner
-  b.colArrow([7, 8], 5, 3, 'up');         // south inner: chains through the core
-  b.colArrow([9, 10], 5, 3, 'up');        // south outer
-  // Vertical spikes through the core column (5,5): top exits, bottom chains
+  b.colArrow([6, 7, 8], 7, 2, 'up');
+  b.colArrow([6, 7, 8], 7, 4, 'down');
+  b.pathArrow([[6, 7, 2], [6, 7, 1], [5, 7, 1], [5, 7, 0]], 'above');  // W rising
+  b.pathArrow([[8, 7, 2], [8, 7, 1], [9, 7, 1], [9, 7, 0]], 'above');  // E rising
+  b.pathArrow([[6, 7, 4], [6, 7, 5], [5, 7, 5], [5, 7, 6]], 'below');  // W falling
+  b.pathArrow([[8, 7, 4], [8, 7, 5], [9, 7, 5], [9, 7, 6]], 'below');  // E falling
+  // Extra near-cap spikes on the N/S faces of the vertical column (more rays,
+  // denser starburst; each exits into empty air).
+  b.pathArrow([[7, 6, 1], [7, 5, 1], [7, 5, 0]], 'above');  // N near-top
+  b.pathArrow([[7, 8, 1], [7, 9, 1], [7, 9, 0]], 'above');  // S near-top
+  b.pathArrow([[7, 6, 5], [7, 5, 5], [7, 5, 6]], 'below');  // N near-bottom
+  b.pathArrow([[7, 8, 5], [7, 9, 5], [7, 9, 6]], 'below');  // S near-bottom
+  // Vertical spikes through the core column (7,7): top exits, bottom chains
   // all the way up through cap-core-cap and out.
-  b.zColArrow([0, 1], 5, 5, 'above');
-  b.zColArrow([5, 6], 5, 5, 'above');
+  b.zColArrow([0, 1], 7, 7, 'above');
+  b.zColArrow([5, 6], 7, 7, 'above');
   // Corner spikes at the mid layer: bent, pointing away diagonally.
-  b.pathArrow([[7, 4, 3], [7, 3, 3], [8, 3, 3], [8, 2, 3]], 'up');     // NE
-  b.pathArrow([[3, 4, 3], [3, 3, 3], [2, 3, 3], [2, 2, 3]], 'up');     // NW
-  b.pathArrow([[7, 6, 3], [7, 7, 3], [8, 7, 3], [8, 8, 3]], 'down');   // SE
-  b.pathArrow([[3, 6, 3], [3, 7, 3], [2, 7, 3], [2, 8, 3]], 'down');   // SW
+  b.pathArrow([[9, 6, 3], [9, 5, 3], [10, 5, 3], [10, 4, 3]], 'up');     // NE
+  b.pathArrow([[5, 6, 3], [5, 5, 3], [4, 5, 3], [4, 4, 3]], 'up');       // NW
+  b.pathArrow([[9, 8, 3], [9, 9, 3], [10, 9, 3], [10, 10, 3]], 'down');  // SE
+  b.pathArrow([[5, 8, 3], [5, 9, 3], [4, 9, 3], [4, 10, 3]], 'down');    // SW
   // Core column continuity (unclaimed z-edges between EVERY vertical piece:
   // z-spike → cap → core → cap → z-spike; caps otherwise float, since weave
   // only joins nodes within a layer).
-  b.addEdge(nid3(5, 5, 1), nid3(5, 5, 2));
-  b.addEdge(nid3(5, 5, 2), nid3(5, 5, 3));
-  b.addEdge(nid3(5, 5, 3), nid3(5, 5, 4));
-  b.addEdge(nid3(5, 5, 4), nid3(5, 5, 5));
+  b.addEdge(nid3(7, 7, 1), nid3(7, 7, 2));
+  b.addEdge(nid3(7, 7, 2), nid3(7, 7, 3));
+  b.addEdge(nid3(7, 7, 3), nid3(7, 7, 4));
+  b.addEdge(nid3(7, 7, 4), nid3(7, 7, 5));
   b.weaveLayers();
   return b.build({ t: 40, m: 300 });
 }
@@ -1152,6 +1238,8 @@ function build3DLevel28() {
     b.rowArrow([1, 2], 7, z, 'right'); b.rowArrow([3, 4], 7, z, 'right');
     b.rowArrow([5, 6], 7, z, 'right'); b.rowArrow([7, 8], 7, z, 'right');
     b.rowArrow([9, 10], 7, z, 'right');
+    // Base/feet row (deep queue) — gives the sitting cat a fuller haunch.
+    b.queueRow([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 8, z, 'right', 3);
   }
   // Spine: front↔back spans in the carved column.
   b.verticalSpan(5, 4, 0, 1, 'below');
@@ -1160,6 +1248,9 @@ function build3DLevel28() {
   // at the top. Its head waits for the y4 body row, so the tail is one of
   // the last pieces to leave (it uncurls at the end).
   b.pathArrow([[0, 7, 1], [0, 6, 1], [0, 5, 1], [0, 4, 1], [1, 4, 1]], 'right');
+  // Bent front paw poking down ahead of the chest (front layer), for shape
+  // variety — new cells beyond the body, exits south off the board.
+  b.pathArrow([[10, 5, 0], [11, 5, 0], [11, 6, 0]], 'down');
   b.weaveLayers();
   return b.build({ t: 40, m: 320 });
 }
@@ -1182,12 +1273,19 @@ function build3DLevel29() {
   // Axis-aligned arms are straight 3-cell lines from the board edge to the
   // cell beside the axis; `inward` points them at the axis. Diagonal arms
   // are bent elbows starting beside the axis and stepping outward.
+  // Axis-aligned (base-pair) layers carry a parallel BACKBONE arrow one cell
+  // out from the bond, so the double helix reads as two thick strands at the
+  // rungs; the backbone always points outward and exits free.
   const arm = (dir8, z, inward) => {
     switch (dir8) {
-      case 0: b.colArrow([0, 1, 2], 3, z, inward ? 'down' : 'up'); break;
-      case 2: b.rowArrow([4, 5, 6], 3, z, inward ? 'left' : 'right'); break;
-      case 4: b.colArrow([4, 5, 6], 3, z, inward ? 'up' : 'down'); break;
-      case 6: b.rowArrow([0, 1, 2], 3, z, inward ? 'right' : 'left'); break;
+      case 0: b.colArrow([0, 1, 2], 3, z, inward ? 'down' : 'up');
+        b.colArrow([0, 1, 2], 2, z, 'up'); break;
+      case 2: b.rowArrow([4, 5, 6], 3, z, inward ? 'left' : 'right');
+        b.rowArrow([4, 5, 6], 2, z, 'right'); break;
+      case 4: b.colArrow([4, 5, 6], 3, z, inward ? 'up' : 'down');
+        b.colArrow([4, 5, 6], 2, z, 'down'); break;
+      case 6: b.rowArrow([0, 1, 2], 3, z, inward ? 'right' : 'left');
+        b.rowArrow([0, 1, 2], 2, z, 'left'); break;
       case 1: b.pathArrow([[3, 2, z], [4, 2, z], [4, 1, z], [5, 1, z]], 'right'); break;
       case 3: b.pathArrow([[4, 3, z], [4, 4, z], [5, 4, z], [5, 5, z]], 'down'); break;
       case 5: b.pathArrow([[3, 4, z], [2, 4, z], [2, 5, z], [1, 5, z]], 'left'); break;
@@ -1246,14 +1344,18 @@ function build3DLevel30() {
   // Chains run clockwise (W→N→E→S) and drain at the free south-east arrow —
   // the south side must NOT chain onward into the west, or the ring's
   // dependencies close into a circle and deadlock.
-  b.rowArrow([0, 1, 2], 0, 3, 'right');    // north-west, chains east
-  b.rowArrow([3, 4, 5, 6], 0, 3, 'right'); // chains into the east col
-  b.colArrow([0, 1, 2], 7, 3, 'down');     // east upper, chains south
-  b.colArrow([3, 4, 5, 6], 7, 3, 'down');  // chains into the south side
-  b.rowArrow([5, 6, 7], 7, 3, 'right');    // south-east: FREE (exits past x8)
-  b.rowArrow([1, 2, 3, 4], 7, 3, 'right'); // chains into the free arrow
-  b.colArrow([5, 6, 7], 0, 3, 'up');       // west, chains north
-  b.colArrow([1, 2, 3, 4], 0, 3, 'up');    // chains into the north row
+  // Deep queues along each edge, all chaining clockwise toward the single free
+  // south-east arrow (which exits past x8) — the drain order is now several
+  // arrows deep per side.
+  b.queueRow([0, 1, 2, 3, 4, 5, 6], 0, 3, 'right');   // north, chains east
+  b.queueCol([0, 1, 2, 3, 4, 5, 6], 7, 3, 'down');    // east, chains south
+  b.queueRow([1, 2, 3, 4, 5, 6, 7], 7, 3, 'right');   // south, SE arrow drains free
+  b.queueCol([1, 2, 3, 4, 5, 6, 7], 0, 3, 'up');      // west, chains north
+  // Bent corner buttresses protruding off the base ring (arrow-shape variety;
+  // each exits into empty air, so they stay free).
+  b.pathArrow([[9, 1, 3], [8, 1, 3], [8, 0, 3]], 'up');    // NE
+  b.pathArrow([[7, 9, 3], [7, 8, 3], [8, 8, 3]], 'right'); // SE
+  b.pathArrow([[1, 9, 3], [1, 8, 3], [0, 8, 3]], 'left');  // SW
   b.weaveLayers();
   return b.build({ t: 35, m: 360 });
 }

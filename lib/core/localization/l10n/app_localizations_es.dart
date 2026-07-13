@@ -231,6 +231,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get resetView => 'Restablecer vista';
 
   @override
+  String get dragToRotate => 'Arrastra para rotar • pellizca para acercar';
+
+  @override
   String get challengeTimeAttack => 'Contrarreloj';
 
   @override

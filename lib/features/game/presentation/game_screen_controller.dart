@@ -130,6 +130,12 @@ class GameScreenController extends ChangeNotifier {
   String? get flashingArrowId => _flashingArrowId;
   GameAttemptTrace? get lastAttemptTrace => _lastAttemptTrace;
 
+  /// Id of the most recently tapped arrow (still-active only shows a highlight;
+  /// an escaped arrow is no longer in `activeArrows` so nothing is emphasized).
+  /// Drives the 3D board's selection ring so the tapped piece is legible under
+  /// orbit.
+  String? get lastActivatedArrowId => _lastAttemptTrace?.arrowId;
+
   /// Resolves once the pending local completion save (if any) has settled.
   /// A no-op (already-resolved future) when no victory has occurred yet.
   Future<void> get completionSettled =>

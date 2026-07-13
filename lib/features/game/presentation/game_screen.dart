@@ -301,7 +301,7 @@ class _GameReadyView extends StatelessWidget {
             if (level.boardGraph.isMultiLayer)
               Graph3DBoard(
                 session: session,
-                lastActivatedArrowId: null,
+                lastActivatedArrowId: controller.lastActivatedArrowId,
                 flashingArrowId: controller.flashingArrowId,
                 animate: animateBoard,
                 onArrowActivated: controller.activateArrow,

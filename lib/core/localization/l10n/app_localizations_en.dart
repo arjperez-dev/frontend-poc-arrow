@@ -228,6 +228,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get resetView => 'Reset view';
 
   @override
+  String get dragToRotate => 'Drag to rotate • pinch to zoom';
+
+  @override
   String get challengeTimeAttack => 'Time Attack';
 
   @override

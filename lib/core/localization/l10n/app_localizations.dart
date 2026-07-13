@@ -524,6 +524,12 @@ abstract class AppLocalizations {
   /// **'Reset view'**
   String get resetView;
 
+  /// No description provided for @dragToRotate.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to rotate • pinch to zoom'**
+  String get dragToRotate;
+
   /// No description provided for @challengeTimeAttack.
   ///
   /// In en, this message translates to:

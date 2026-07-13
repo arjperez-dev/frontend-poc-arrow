@@ -2468,3 +2468,168 @@ colors.
   documented in both affected test files but not root-caused inside
   flutter_test; if a future phase needs multiple real-asset navigations
   in one file, inject a fake level loader instead.
+
+## Phase 28 — 3D Audit and Polish (2026-07-13)
+
+Audit-first phase. Full per-level + interaction findings are saved in
+`harness/phases/phase_28_audit_findings.md`. All four approved fix groups
+were implemented; the change is **presentation-scoped** — no JSON, no
+`MovementResolver`, no projector projection-contract, no `level_mode_filter.dart`,
+no 2D board changes. `manual_levels_3d.json` was NOT touched (no level-content
+defect found).
+
+### What Changed
+
+- **Exit animation (A1/A2/A3)** — `graph_3d_board_painter.dart`: the 3D exit is
+  now arc-length **path-following** (bent arrows round their own corners,
+  "train on tracks") mirroring the 2D board, instead of a rigid
+  translate-and-fade. The exit slide is now a **depth-sorted drawable** (added
+  to the same `_Drawable` list) so a piece leaving away from the camera is
+  occluded by nearer geometry instead of always drawing on top. Fly-out
+  distance scales with the head's `pixelScale` so it reads the same at every
+  zoom.
+- **Arrow legibility (A5/A6/A7)** — vertical (`above`/`below`) arrows whose
+  projected axis is degenerate (camera looking down the stack) now get a
+  filled-disc head fallback so the head is never invisible; active arrows are
+  drawn **segment-by-segment** so each segment dims by its own depth
+  (near-to-far shading within a spanning arrow); the just-tapped arrow shows a
+  white **selection ring** — `lastActivatedArrowId` is now wired from the
+  controller (`GameScreenController.lastActivatedArrowId => lastAttemptTrace?.arrowId`)
+  to `Graph3DBoard` (was hard-wired `null`).
+- **Depth/comfort (B1/B3)** — a faint per-layer **convex-hull floor plate**
+  grounds each z-layer so the stack reads as separate floors; a one-time
+  **"drag to rotate" hint** pill (auto-hides after 4 s or on first touch) makes
+  the board's rotatability discoverable.
+- **Camera/aspect (A8/A9/B2)** — `Graph3DBoard` aspect is now derived from the
+  level's own footprint (`_boardAspectRatio`) instead of a fixed square, so the
+  flat 2-layer cat (28) gets width and deep stacks (≥6 layers, e.g. helix 29)
+  get height.
+- **l10n** — added `dragToRotate` to `app_en.arb` / `app_es.arb` (regenerated).
+
+### Files Touched
+
+- `lib/features/game/presentation/widgets/graph_3d_board_painter.dart`
+- `lib/features/game/presentation/widgets/graph_3d_board.dart`
+- `lib/features/game/presentation/game_screen.dart` (pass real `lastActivatedArrowId`)
+- `lib/features/game/presentation/game_screen_controller.dart` (add getter)
+- `lib/core/localization/l10n/app_en.arb`, `app_es.arb` (+ generated `app_localizations*.dart`)
+- `harness/phases/phase_28_audit_findings.md` (new — audit deliverable)
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 235/235 passed.
+- `node tool/gen_levels.js --validate-only`: ALL VALID: true (no level files
+  touched; run as a safety check).
+
+### New Tests
+
+- None. Changes are presentation-only (custom-paint rendering, animation curves,
+  camera aspect, an l10n hint); the existing suite covers the widget/controller
+  seams. Visual correctness of the new exit path-following, floor plates, head
+  fallback, and selection ring requires on-device inspection.
+
+### Limitations
+
+- **Manual emulator/device validation is pending** (as for all prior phases):
+  orbit/tilt/zoom each 3D level 21–30; trigger an exit on a straight AND a bent
+  arrow (e.g. 27/29/30) and confirm the path-follow + depth-sort read correctly
+  through the whole exit; confirm z-arrow head fallback, floor plates, selection
+  ring, the rotate hint, and reset-view.
+- `_addLayerFloors` uses a per-layer convex hull; for a concave silhouette
+  (e.g. the cat) the floor plate is the hull, slightly larger than the true
+  footprint. Intentional — it is a faint grounding cue, not an outline.
+
+### Next Recommended Phase
+
+On-device validation pass of the 3D polish, then tune floor-plate/selection-ring
+opacities and the exit fly-out constant by eye if needed.
+
+## Phase 28.1 — 3D Level Complexity Redesign (Hard Mode)
+
+### What Changed
+
+- Reworked all ten 3D builders (`build3DLevel21..30`) in `tool/gen_levels.js`
+  so every 3D level is significantly denser and deeper than before, while each
+  figure still reads as its silhouette (verified by per-layer ASCII render of
+  the regenerated JSON before handover). Regenerated
+  `assets/levels/manual_levels_3d.json` via `--generate-3d`.
+- Added two authoring helpers to `Builder3D`: `queueRow(xs,y,z,dir,size)` and
+  `queueCol(ys,x,z,dir,size)` — fill a row/column with a QUEUE of disjoint,
+  same-direction arrows (auto-splitting at gaps and into groups of `size`;
+  every run must be ≥2 cells). Deep queues raise arrow count and forced-ordering
+  depth without hand-listing each arrow, and keep solvability trivial (a
+  same-direction queue toward a boundary always drains greedily).
+- Design invariants held for all ten: no single-node arrows, node/edge-disjoint,
+  no free nodes, `comp=1`, greedy-solvable, real-gap-3D clean, ≥1 spanning
+  vertical, multi-layer, hard tier. No renderer/projector/board, resolver,
+  backend, auth/sync, or 2D-asset changes.
+
+### Per-level summary (arrows: baseline → new, layers, shape/depth notes)
+
+- **21** 20→**40**, 3 layers (6×5). Row-queued grid; six spanning columns
+  parked at row tails (acyclic) with heads landing on covered blockers one layer
+  over; two center columns punched through with split y2 rows. Depth-3 chains.
+- **22** 28→**50**, 3 layers (6×6). Column-oriented (contrasts 21's rows); six
+  spanning columns tail-parked; two bent cross-layer feet for shape variety.
+- **23 Pyramid** 42→**48**, 4 tiers 2/4/6/8. Deep 3-cell base queues; inner z2
+  rows sweep through the core span tails → three-deep cross-layer chains
+  (row → core span → apex).
+- **24 Diamond** 34→**42**, 5 tiers 2/4/6/4/2. Full center span lattice
+  (tip→equator→tip); deepened equator; four bent faceting nubs.
+- **25 Hourglass** 30→**34**, 5 tiers 5/3/1/3/5 (recentred to (3,3)); single-cell
+  waist preserved; eight bent corner flares (four per cap) exiting the true
+  boundary.
+- **26 3D Cross** 24→**32**, 5 layers. Plus-plate arms extended to length 8 with
+  deep queues chaining toward the 2×2 post; post chains through the plate.
+- **27 3D Star** 23→**31**, 7 layers. Core recentred to (7,7); six axis spikes
+  lengthened into deep queues; extra near-cap N/S spikes; cap + corner + z spikes.
+- **28 Cat** 43→**50**, 2 layers. Added a deep base/feet queue row per layer and
+  a bent front paw; ears, head, hooked tail, spine spans kept.
+- **29 Double Helix** 22→**32**, 10 layers. Parallel backbone arrow added at each
+  base-pair (axis-aligned) layer so the two strands read as thick at the rungs;
+  spiral and inward-bond chains unchanged.
+- **30 Hollow Pyramid** 26→**33**, 4 shells. Outer ring rewritten as deep queues
+  draining clockwise into the single free SE arrow; three bent corner buttresses.
+
+Arrow-count average rose from ~29 to ~39 (all within the hard band [20,60],
+none in the 51–60 warning zone). Compact figures (25/26/27/29/30) received
+moderate increases to keep silhouettes legible (legibility-first, per the
+approved per-figure judgment); larger footprints (21/22/23/24/28) went higher.
+
+### Files Touched
+
+- `tool/gen_levels.js` (Builder3D helpers + all ten 3D builders)
+- `assets/levels/manual_levels_3d.json` (regenerated, levels 21–30)
+
+### Verification Results
+
+- `flutter analyze`: passed, no issues.
+- `flutter test`: 235/235 passed (no test changes needed — the 3D group has no
+  hardcoded arrow-count literals; all generic invariant tests cover 21–30).
+- `node tool/gen_levels.js --generate-3d`: ALL VALID: true; asset written.
+- `node tool/gen_levels.js --validate-only`: both sets ALL VALID, exit 0.
+- `assets/levels/manual_levels_2d.json`: untouched (`--generate-2d`/`--generate`
+  never run; 2D tier averages unchanged at 11.2 / 17.6 / 28.1).
+- Per-layer ASCII silhouette render of all ten regenerated levels confirmed each
+  figure still reads.
+
+### New Tests
+
+- None (no test literals changed; existing generic invariant suite covers all 10
+  regenerated levels).
+
+### Limitations
+
+- **Manual device validation pending**: orbit/tilt/zoom each 3D level 21–30;
+  confirm each figure reads under rotation; exit on a straight AND a bent arrow
+  reads correctly through the whole animation; the deeper dependency chains are
+  solvable by planning.
+- Levels 26 and 27 have large sparse bounding boxes (16×16 / 15×15) from their
+  long thin arms; they read as cross/star but render small — a candidate for a
+  future respace if on-device legibility is poor.
+
+### Next Recommended Phase
+
+On-device validation of the redesigned 3D levels; tune any figure whose density
+fights the renderer by respacing geometry (never by changing the painter).

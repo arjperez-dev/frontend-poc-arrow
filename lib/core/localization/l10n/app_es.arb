@@ -71,6 +71,7 @@
   "gameOverMessage": "Te quedaste sin vidas.",
   "mistakes": "Errores",
   "resetView": "Restablecer vista",
+  "dragToRotate": "Arrastra para rotar • pellizca para acercar",
   "challengeTimeAttack": "Contrarreloj",
   "challengeTimeAttackDescription": "Supera el nivel antes de que acabe el tiempo.",
   "challengeMoveLimit": "Movimientos limitados",
