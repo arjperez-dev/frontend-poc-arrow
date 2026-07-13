@@ -150,6 +150,18 @@ class AppLocalizationsEs extends AppLocalizations {
   String get cancel => 'Cancelar';
 
   @override
+  String get settingsSectionAccount => 'Cuenta';
+
+  @override
+  String get settingsSectionGamePreferences => 'Preferencias de juego';
+
+  @override
+  String get settingsSectionAppSettings => 'Ajustes de la aplicacion';
+
+  @override
+  String get settingsSectionData => 'Datos';
+
+  @override
   String get loadingSettings => 'Cargando configuracion';
 
   @override
@@ -217,4 +229,50 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get resetView => 'Restablecer vista';
+
+  @override
+  String get challengeTimeAttack => 'Contrarreloj';
+
+  @override
+  String get challengeTimeAttackDescription =>
+      'Supera el nivel antes de que acabe el tiempo.';
+
+  @override
+  String get challengeMoveLimit => 'Movimientos limitados';
+
+  @override
+  String get challengeMoveLimitDescription =>
+      'Despeja todas las flechas con un presupuesto fijo de movimientos.';
+
+  @override
+  String get challengePerfectRun => 'Partida perfecta';
+
+  @override
+  String get challengePerfectRunDescription =>
+      'Una colision termina la partida. Solo perfeccion.';
+
+  @override
+  String get timeLeft => 'Tiempo';
+
+  @override
+  String get movesLeft => 'Movimientos restantes';
+
+  @override
+  String get flawless => 'Impecable';
+
+  @override
+  String get challengeBest => 'Mejor del reto';
+
+  @override
+  String get newRecord => 'Nuevo record!';
+
+  @override
+  String get challengeFailedTimeUp => 'Se acabo el tiempo!';
+
+  @override
+  String get challengeFailedOutOfMoves => 'Sin movimientos!';
+
+  @override
+  String get challengeFailedMistake =>
+      'Una colision termino tu partida perfecta.';
 }

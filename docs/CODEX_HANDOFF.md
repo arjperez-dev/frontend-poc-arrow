@@ -2153,3 +2153,244 @@ Chosen as Option 2 of a Phase 24.1 audit (P24 had explicitly rejected a file spl
 ### Next Recommended Phase
 
 Manual on-device/emulator validation of 2D and 3D gameplay end-to-end now that levels load from two separate assets.
+
+## Phase 25 — 3D Figure Levels 26–30 (Cross, Star, Cat, Helix, Hollow Pyramid) (2026-07-11)
+
+### Context
+
+With Phase 24's game-mode split in place (3D levels live in
+`manual_levels_3d.json`, internally 21+, displayed as 3D 1+ via
+`displayNumberFor`), the 3D mode grows from 5 to 10 levels. The five new
+levels are figure-shaped: 26 "3D Cross", 27 "3D Star", 28 "Abstract Cat",
+29 "Double Helix", 30 "Hollow Pyramid" — internally 26–30, displayed as 3D
+levels 6–10 with zero display-layer changes (the mapping is arithmetic).
+
+### What Changed
+
+- **`tool/gen_levels.js`**: two new `Builder3D` helpers — `zColArrow`
+  (straight vertical arrows spanning ≥2 layers) and `pathArrow` (free-form
+  bent arrows stepping across layers, used for staircase rays and the cat's
+  tail) — plus five deterministic builders `build3DLevel26..30` wired into
+  `build3DLevels()`. Shape/gameplay notes live as comments on each builder.
+- **`assets/levels/manual_levels_3d.json`**: regenerated — levels 21–25
+  byte-identical (verified against HEAD), 26–30 appended. All 10: hard,
+  comp=1, no free/shared nodes, no single-node arrows, greedy-solvable,
+  no real-gap exits. Arrow counts 20–42; layer counts 2–8.
+- **`lib/core/config/app_config.dart`**: `manualLevelCount` 25 → 30 (the 3D
+  ceiling via `maxInternalLevelFor`; 2D stays capped by `twoDLevelCount`).
+- **`test/features/game/infrastructure/manual_levels_test.dart`**: merged-set
+  literals 25 → 30 (+`manual-030`), 3D group widened to 21–30 (hasLength 10).
+
+### Design notes — shape-first rework (user rejected the first pass)
+
+The first versions of 26-29 were built solver-first and did not read as
+their figures on screen (only the hollow pyramid did). All four were
+redesigned around the canonical geometry, then the game structure was fit
+inside the shape:
+
+- **26 Cross**: was three stacked plus-plates; now ONE true 3D cross — a
+  2-thick plus plate at z2 with a 2×2 post punched through its center,
+  z0-z4 (three orthogonal bars, one shared intersection).
+- **27 Star**: was planar rays + decoration; now a starburst — octahedral
+  core (3×3 mid + plus caps) radiating 14 spikes: ±x/±y/±z straight, plus
+  4 rising and 4 falling bent spikes.
+- **28 Cat**: was a front-facing blob; now the iconic SITTING side profile
+  (haunch back-left, head front-top, two upright ear columns, tail hugging
+  the back edge with an inward hook), per pixel/voxel-cat conventions
+  (ears + tail + silhouette = recognizability).
+- **29 Helix**: was rotating square edges (a tunnel); now true DNA — two
+  arms orbiting the axis column at 45°/layer over 10 layers, 180° apart;
+  axis-aligned layers form straight "base pair" bond lines through the
+  axis (one arm inward/blocked, one outward/free), diagonal layers are
+  bent elbows.
+- **30 Hollow Pyramid**: unchanged (it read correctly).
+
+Validator catches across both passes: disconnected vertical segment groups
+(every non-adjacent vertical piece pair needs an explicit connectivity
+z-edge — hit three times), head-on pairs across a carved column, and a
+ring whose four sides chained in a full circle (a chain loop needs a free
+drain). Silhouettes were verified by ASCII-rendering every layer from the
+generated JSON before handing over — the step whose absence caused the
+first-pass rejection.
+
+### Verification Results
+
+- `node tool/gen_levels.js --generate-3d`: ALL VALID, wrote 21–30
+  (21–25 byte-identical); `--validate-only`: both sets ALL VALID.
+- Per-layer ASCII silhouette render of 26–29: all four figures read.
+- `flutter analyze`: no issues.
+- `flutter test`: 207/207 passed.
+- Manual on-device validation pending: figures read correctly under orbit
+  (cross planes, star rays, cat silhouette from the front at yaw≈0, helix
+  strands + corner bonds, pyramid shell), and the display numbering shows
+  3D 6–10 in the Challenges/3D list.
+
+### Limitations
+
+- The user-requested "start node / end node / path" framing does not map to
+  this game's mechanics; "solvability" is implemented as the established
+  greedy-exit model (every arrow can eventually escape).
+- The cat reads best from the front (yaw ≈ 0); at extreme yaw it is
+  abstract, as 2-layer sculptures are.
+- 26–30 average fewer arrows than a dense 2D hard level by design — 3D
+  orbiting adds difficulty on its own; tune per playtest feedback.
+## Phase 26 — Challenges Mode: Time Attack, Move Limit, Perfect Run (2026-07-12)
+
+### Context
+
+Wires the main menu's "Challenges" placeholder button (Phase 24 rebrand,
+`onPressed: null`) into a full challenge system: picker → the existing
+level-selection screen (same 2D/3D mode from settings, same unlocks as
+campaign) → the existing game screen with a challenge modifier active.
+User decisions: v1 ships Time Attack + Move Limit + Perfect Run (Daily
+Challenge deferred); challenge results are FULLY SEPARATE from campaign
+progress; scoring demonstrates the Strategy design pattern through the
+pre-existing `ScoreStrategy` abstraction.
+
+### What Changed
+
+- **New feature `lib/features/challenges/`** (domain / application /
+  infrastructure / presentation):
+  - `Challenge` enum + `ChallengeContext` with CALCULATED limits: the
+    minimal solve is one tap per arrow (guaranteed by greedy solvability),
+    so Time Attack gets `max(30s, arrows × 5/4/3s − 20s)` for easy/medium/hard
+    and Move Limit gets `arrows + 5/3/2` slack moves by tier. (An earlier
+    draft read the dormant `timeLimit`/`maxMoves` metadata; replaced with
+    computed limits at user request — metadata stays dormant.)
+  - **Strategy pattern showcase**: `TimeAttackScoreStrategy` (+10/remaining
+    second), `MoveLimitScoreStrategy` (+25/unused move),
+    `PerfectRunScoreStrategy` (1500 − moves·10; mistakes absent because one
+    mistake ends the run) — all implementing the untouched `ScoreStrategy`
+    interface, selected at exactly one point (`scoreStrategyForChallenge`).
+  - `ChallengeRecordsRepository` port + get/save use cases +
+    SharedPreferences adapter (`challenges.bestScores` key) + factory.
+  - `ChallengePickerScreen` (three challenge cards).
+- **Game engine** (challenge rules live in application, not presentation):
+  `GameSession` carries an optional `ChallengeContext` (+`remainingSeconds`/
+  `remainingMoves`); `MoveArrowUseCase` enforces the move budget (a tap
+  beyond it fails the run before resolving) and perfect-run's
+  one-mistake-fails; `GameSessionService.tickClock` advances the clock and
+  fails an expired Time Attack. Null challenge = byte-identical campaign
+  behavior.
+- **First real timer in the app**: `GameScreenController` runs a 1s periodic
+  ticker for Time Attack (rule in the service; controller only ticks),
+  disabled in tests via the `enableBoardAnimations` seam, driven manually
+  with `advanceClock()`.
+- **UI**: home button wired; levels screen accepts a challenge (banner chip,
+  levels open with `GameRouteArgs`); in challenge mode each level card shows
+  the CHALLENGE best ("Challenge best: N") or no score at all when that
+  level hasn't been played in that specific challenge — campaign bests
+  never appear there (and vice versa); game HUD gains one challenge stat chip
+  (countdown m:ss / moves left / flawless badge); game-over overlay message
+  varies by fail reason (time up / out of moves / broken perfect run);
+  victory overlay shows the challenge best + "New record!", hides the
+  leaderboard button in challenges, and Next Level keeps the challenge.
+  Full EN+ES l10n (14 new keys).
+- **On challenge victory**: a challenge record is saved INSTEAD of campaign
+  completion — no unlock, no remote sync, no leaderboard submit.
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 226/226 passed (19 new: strategy formulas + factory,
+  rule enforcement incl. campaign-unchanged, records round-trip,
+  controller clock/fail-reasons, and the separation contract — challenge
+  victory saves a record and never calls saveLevelCompletion/remote).
+- `node tool/gen_levels.js --validate-only`: n/a (no level files touched).
+- Manual on-device validation pending: full flow for each challenge in both
+  2D and 3D modes; countdown visible and defeat sound on expiry; campaign
+  progress unchanged after challenge wins.
+
+### Limitations
+
+- Daily Challenge (date-seeded level + streak) was researched and deferred
+  to a future phase; Marathon and Mirror Mode were catalogued as candidates.
+- Challenge records are local-only by design (no backend schema for them).
+- The Perfect Run HUD chip is a static flawless badge, not a counter.
+- Lives are fully campaign-only: the hearts are hidden in challenge HUDs
+  AND the lives mechanic is disabled in challenge sessions (user playtest
+  found the hidden six-collision death confusing — a challenge run now
+  ends only by its own rule: clock, budget, or the perfect-run mistake).
+  Regression-tested with eight collisions under Time Attack.
+
+## Phase 27 — UI Polish: Launcher Icon, Home Menu Layout, Settings Restyle (2026-07-12)
+
+### Context
+
+User-requested visual pass on branch `feat/phase-27-ui-polish`, driven by
+three reference images: a rendered heart figure level (new app icon), a
+dark UI kit and a settings mockup (both lavender/violet on dark navy).
+The settings restyle was explicitly a **trial** for a possible app-wide
+re-theme. Mid-phase, after seeing the result, the user kept the new
+sectioned layout but rejected the lavender/violet palette — the final
+screen uses the mockups' structure with the app's existing mint/neon
+colors.
+
+### What Changed
+
+- **Android launcher icon** (no new dependencies — ffmpeg pipeline, not
+  `flutter_launcher_icons`): the user-supplied `HeartNodus.jpeg` (864×758,
+  the heart level rendered with neon arrows) was padded square on its own
+  sampled background color `#121A2D` (probed from the image corner so no
+  seam shows), then scaled to the 5 legacy `ic_launcher.png` mipmaps
+  (heart at ~80% of canvas). Added a proper adaptive icon for API 26+:
+  `mipmap-anydpi-v26/ic_launcher.xml`, `values/ic_launcher_background.xml`
+  (color `#121A2D`), and 5 `ic_launcher_foreground.png` mipmaps with the
+  heart at ~58% of canvas to fit the 66/108dp safe zone under any mask.
+  `AndroidManifest.xml` already pointed at `@mipmap/ic_launcher` — untouched.
+- **Home menu layout** (`home_screen.dart`): the 4-button `Row` from P21.1
+  (icon-above-label tiles, 11px text that ellipsized "Leaderboard" and the
+  Spanish labels) became a `Column` of full-width horizontal bar buttons:
+  leading icon, 16px label, trailing chevron — same per-button neon accent,
+  glow shadow, and tap-scale feedback. Wordmark, animated background, and
+  debug row untouched. Widget tests locate these by localized label text,
+  so no test changes were needed for this screen.
+- **Settings restyle** (`settings_screen.dart` — new structure, existing
+  colors):
+  - Mockup-style sectioned order with uppercase mint `_SectionHeader`s:
+    **Account** (avatar with initials or person glyph on a mint→blue
+    gradient circle; filled login/sync; outlined logout) → **Game
+    Preferences** (game mode, language) → **App Settings** (sound + music
+    `SwitchListTile`s with rounded mint icon chips) → **Data** (backend URL
+    card, both reset buttons).
+  - `_SettingsCard` (a `Material` with the same mint-tinted border as the
+    global `Card` theme) replaces `Card` within this screen. Using
+    `Material` (not a decorated `Container`) matters: `ListTile` asserts if
+    wrapped in a color-decorated non-Material ancestor.
+  - A lavender/violet variant of this restyle (new `AppTheme` constants,
+    scoped `Theme` override for switches/segmented button, gradient primary
+    button) was built first and then reverted at the user's direction after
+    review — the layout survived, the palette did not. No `AppTheme` color
+    constants were ultimately added or changed.
+  - All `GameUiKeys`, the language-dropdown key, controller wiring, dialogs,
+    and snackbar logic are byte-identical in behavior. The empty placeholder
+    subtitles (`soundFoundationDescription`/`musicFutureDescription`, both
+    `" "`) are no longer rendered; their ARB keys remain.
+  - 4 new ARB keys in both locales (`settingsSectionAccount`,
+    `settingsSectionGamePreferences`, `settingsSectionAppSettings`,
+    `settingsSectionData`), Spanish kept accent-free matching file style;
+    regenerated via `flutter gen-l10n`.
+- **Test adjustments** (`settings_test.dart`, both consequences of the
+  taller sectioned layout on the 800×600 test viewport): the "settings
+  loaded" readiness probe switched from `soundSwitch` (now below the fold —
+  `ListView` children are lazily built, so the finder finds nothing) to
+  `gameModeSelector` (near the top); and the reset-progress tap now does
+  `ensureVisible` after `scrollUntilVisible`, because the latter stops as
+  soon as an edge enters the viewport while the tap targets the center.
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 235/235 passed (0 new, 2 adjusted as above).
+- `node tool/gen_levels.js --validate-only`: n/a (no level files touched).
+- Manual on-device validation pending: launcher icon on a real
+  launcher/emulator (legacy + adaptive mask), home layout, settings look.
+
+### Limitations
+
+- The lavender/violet trial palette was rejected for this app; any future
+  re-theme proposal should start from a different palette direction (the
+  sectioned layout itself was approved and kept).
+- Icon source is a JPEG screenshot; a vector or direct-render source would
+  produce crisper small sizes if ever needed.
+- No `ios/` directory exists in this project — nothing to update there.

@@ -7,7 +7,7 @@ Internal level numbers stay **globally unique** across both files (no
 renumber) — this is a file split, not a change to numbering:
 
 - `assets/levels/manual_levels_2d.json` — levels **1–20** (2D).
-- `assets/levels/manual_levels_3d.json` — levels **21–25** (3D, see §16).
+- `assets/levels/manual_levels_3d.json` — levels **21–30** (3D, see §16).
 
 Edit either by hand, then validate with:
 
@@ -271,7 +271,7 @@ denser baseline:
 
 ```bash
 node tool/gen_levels.js --generate-2d  # rebuilds levels 1-15 (random) + 16-20 (figures), WRITES manual_levels_2d.json
-node tool/gen_levels.js --generate-3d  # rebuilds levels 21-25, WRITES manual_levels_3d.json
+node tool/gen_levels.js --generate-3d  # rebuilds levels 21-30, WRITES manual_levels_3d.json
 node tool/gen_levels.js --generate     # shorthand: runs both of the above
 ```
 
@@ -360,7 +360,35 @@ triangle explicitly with consistent gaps, then shrinking the whole shape
 (a large solid rim band, like a dense near-rectangle, had a near-zero
 solvable rate) until the solved rate became reliable (~1% per attempt).
 
-## 16. 3D levels (21–25)
+## 16. 3D levels (21–30)
+
+Levels 26–30 (displayed as 3D levels 6–10) are figure levels built from
+deterministic builders, like 23–25 but with more complex silhouettes:
+
+- **26 "3D Cross"** — ONE true 3D cross: a 2-thick plus-sign plate at the
+  middle layer with a 2×2 vertical post punched through its shared center
+  (three orthogonal bars, single intersection); inward plate arrows chain
+  through the post.
+- **27 "3D Star"** — a starburst: octahedral core (3×3 mid layer + plus
+  caps) radiating 14 spikes — six straight along ±x/±y/±z plus four rising
+  and four falling bent spikes (`pathArrow`).
+- **28 "Abstract Cat"** — the iconic SITTING cat in side profile, two
+  layers deep: rounded haunch at the back, head with two upright ear
+  columns at the front-top, front↔back spine spans, and a bent tail on the
+  back layer that hugs the haunch and hooks inward.
+- **29 "Double Helix"** — DNA: two strand arms orbit a central axis column
+  at 45° per layer over ten layers, always 180° apart; axis-aligned layers
+  form straight base-pair bond lines through the axis, diagonal layers are
+  bent elbows.
+- **30 "Hollow Pyramid"** — 2×2 apex over three concentric hollow rings;
+  every ring arrow runs ALONG its edge (never across the void), corner
+  spans form an inner staircase, and ring chains must drain through a
+  single free exit (a closed chain around a ring deadlocks — see the ring-3
+  comment in `build3DLevel30`).
+
+New `Builder3D` helpers for these: `zColArrow` (multi-layer straight
+vertical arrows) and `pathArrow` (free-form tail→head cell paths for bent
+cross-layer arrows).
 
 Levels 21+ are **multi-layer (3D)** levels. The graph model is the same —
 nodes, edges, arrows — extended with a third axis:
@@ -392,6 +420,6 @@ nodes, edges, arrows — extended with a third axis:
   board (`Graph3DBoard`); 2D levels keep the flat board. No per-level flag.
 - `metadata.generationType` must be `"3d"` (selects the 3D real-gap check).
 - Regenerate/validate with `node tool/gen_levels.js --generate-3d` (rewrites
-  `manual_levels_3d.json` levels 21–25 from the deterministic builders;
+  `manual_levels_3d.json` levels 21–30 from the deterministic builders;
   `manual_levels_2d.json` is a separate file and is never touched by this
   mode) and `--validate-only` (both files, 25 levels total, never writes).

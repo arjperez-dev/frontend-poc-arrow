@@ -82,51 +82,38 @@ class _HomeScreenState extends State<HomeScreen>
                       letterSpacing: 0.5,
                     ),
                   ),
-                  const Spacer(flex: 4),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _MenuNavButton(
-                          icon: Icons.grid_view_rounded,
-                          label: localizations.levels,
-                          accentColor: AppTheme.neonMint,
-                          onPressed: () => Navigator.of(
-                            context,
-                          ).pushNamed(AppRoutes.levels),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _MenuNavButton(
-                          icon: Icons.leaderboard_rounded,
-                          label: localizations.leaderboard,
-                          accentColor: AppTheme.neonBlue,
-                          onPressed: () => Navigator.of(
-                            context,
-                          ).pushNamed(AppRoutes.leaderboardLevelPicker),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _MenuNavButton(
-                          icon: Icons.settings_rounded,
-                          label: localizations.settings,
-                          accentColor: AppTheme.neonPurple,
-                          onPressed: () => Navigator.of(
-                            context,
-                          ).pushNamed(AppRoutes.settings),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _MenuNavButton(
-                          icon: Icons.view_in_ar_rounded,
-                          label: localizations.challenges,
-                          accentColor: AppTheme.neonPink,
-                          onPressed: null,
-                        ),
-                      ),
-                    ],
+                  const Spacer(flex: 3),
+                  _MenuNavButton(
+                    icon: Icons.grid_view_rounded,
+                    label: localizations.levels,
+                    accentColor: AppTheme.neonMint,
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed(AppRoutes.levels),
+                  ),
+                  const SizedBox(height: 12),
+                  _MenuNavButton(
+                    icon: Icons.leaderboard_rounded,
+                    label: localizations.leaderboard,
+                    accentColor: AppTheme.neonBlue,
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).pushNamed(AppRoutes.leaderboardLevelPicker),
+                  ),
+                  const SizedBox(height: 12),
+                  _MenuNavButton(
+                    icon: Icons.settings_rounded,
+                    label: localizations.settings,
+                    accentColor: AppTheme.neonPurple,
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed(AppRoutes.settings),
+                  ),
+                  const SizedBox(height: 12),
+                  _MenuNavButton(
+                    icon: Icons.view_in_ar_rounded,
+                    label: localizations.challenges,
+                    accentColor: AppTheme.neonPink,
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed(AppRoutes.challenges),
                   ),
                   const Spacer(flex: 2),
                   _DebugRow(
@@ -189,7 +176,7 @@ class _MenuNavButtonState extends State<_MenuNavButton> {
         curve: Curves.easeOut,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           decoration: BoxDecoration(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(18),
@@ -207,22 +194,27 @@ class _MenuNavButtonState extends State<_MenuNavButton> {
                   ]
                 : null,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
               Icon(widget.icon, color: color, size: 24),
-              const SizedBox(height: 6),
-              Text(
-                widget.label,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
-                  color: _enabled ? AppTheme.softText : AppTheme.mutedText,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  widget.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                    color: _enabled ? AppTheme.softText : AppTheme.mutedText,
+                  ),
                 ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: color.withValues(alpha: _enabled ? 0.6 : 0.2),
+                size: 22,
               ),
             ],
           ),

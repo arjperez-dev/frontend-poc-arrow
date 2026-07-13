@@ -110,39 +110,43 @@ class _SettingsContent extends StatelessWidget {
     final settings = controller.settings;
 
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
       children: [
-        Card(
+        _SectionHeader(localizations.settingsSectionAccount),
+        _AuthStatusCard(controller: controller),
+        const SizedBox(height: 22),
+        _SectionHeader(localizations.settingsSectionGamePreferences),
+        _GameModeSelectorCard(controller: controller),
+        const SizedBox(height: 12),
+        _LanguageSelectorCard(controller: controller),
+        const SizedBox(height: 22),
+        _SectionHeader(localizations.settingsSectionAppSettings),
+        _SettingsCard(
           child: SwitchListTile(
             key: GameUiKeys.soundSwitch,
             value: settings.soundEnabled,
             onChanged: controller.setSoundEnabled,
+            secondary: const _SettingsIconChip(Icons.volume_up_rounded),
             title: Text(localizations.soundEnabled),
-            subtitle: Text(localizations.soundFoundationDescription),
           ),
         ),
         const SizedBox(height: 12),
-        Card(
+        _SettingsCard(
           child: SwitchListTile(
             key: GameUiKeys.musicSwitch,
             value: settings.musicEnabled,
             onChanged: controller.setMusicEnabled,
+            secondary: const _SettingsIconChip(Icons.music_note_rounded),
             title: Text(localizations.musicEnabled),
-            subtitle: Text(localizations.musicFutureDescription),
           ),
         ),
-        const SizedBox(height: 12),
-        _AuthStatusCard(controller: controller),
-        const SizedBox(height: 12),
-        _LanguageSelectorCard(controller: controller),
-        const SizedBox(height: 12),
-        _GameModeSelectorCard(controller: controller),
-        const SizedBox(height: 12),
+        const SizedBox(height: 22),
+        _SectionHeader(localizations.settingsSectionData),
         _ReadOnlyInfoCard(
           title: localizations.backendUrlLabel,
           value: AppConfig.apiBaseUrl,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
         FilledButton.tonalIcon(
           key: GameUiKeys.resetProgressButton,
           onPressed: () => _confirmResetProgress(context),
@@ -164,7 +168,10 @@ class _SettingsContent extends StatelessWidget {
             ),
           )
         else
-          Text(localizations.resetRemoteProgressLoginRequired),
+          Text(
+            localizations.resetRemoteProgressLoginRequired,
+            style: const TextStyle(color: AppTheme.mutedText),
+          ),
       ],
     );
   }
@@ -207,7 +214,9 @@ class _SettingsContent extends StatelessWidget {
         localizations.resetRemoteProgressLoginRequired,
       RemoteResetResult.failed => localizations.remoteResetFailedMessage,
     };
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _confirmResetProgress(BuildContext context) async {
@@ -247,6 +256,77 @@ class _SettingsContent extends StatelessWidget {
   }
 }
 
+/// Small uppercase label introducing each settings section, mirroring the
+/// sectioned layout of the Phase 27 mockups.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 10),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          color: AppTheme.neonMint,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.4,
+        ),
+      ),
+    );
+  }
+}
+
+/// Rounded card surface matching the global [Card] palette (mint-tinted
+/// border) but built on [Material] directly: [ListTile] asserts when placed
+/// inside a color-decorated non-Material ancestor.
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.child, this.padding});
+
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = padding == null
+        ? child
+        : Padding(padding: padding!, child: child);
+
+    return Material(
+      color: AppTheme.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: AppTheme.neonMint.withValues(alpha: 0.18)),
+      ),
+      child: content,
+    );
+  }
+}
+
+/// Rounded icon badge used as the leading element of toggle rows.
+class _SettingsIconChip extends StatelessWidget {
+  const _SettingsIconChip(this.icon);
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: AppTheme.neonMint.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: AppTheme.neonMint, size: 22),
+    );
+  }
+}
+
 class _AuthStatusCard extends StatelessWidget {
   const _AuthStatusCard({required this.controller});
 
@@ -257,62 +337,128 @@ class _AuthStatusCard extends StatelessWidget {
     final localizations = AppLocalizations.of(context);
     final session = controller.authSession;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              session == null
-                  ? localizations.notLoggedIn
-                  : '${localizations.loggedInAs} ${session.user.displayName}',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: AppTheme.softText,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(localizations.localFirstNotice),
-            if (controller.syncMessage != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                controller.syncMessage == 'success'
-                    ? localizations.syncComplete
-                    : localizations.syncUnavailable,
-              ),
-            ],
-            const SizedBox(height: 14),
-            if (session == null)
-              FilledButton(
-                onPressed: () async {
-                  await Navigator.of(context).pushNamed(AppRoutes.auth);
-                  await controller.refreshAuthSession();
-                },
-                child: Text(localizations.login),
-              )
-            else ...[
-              FilledButton(
-                onPressed: controller.syncing
-                    ? null
-                    : () async {
-                        await controller.syncProgress();
-                      },
-                child: Text(
-                  controller.syncing
-                      ? localizations.loadingSettings
-                      : localizations.syncProgress,
+    return _SettingsCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _AccountAvatar(displayName: session?.user.displayName),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      session == null
+                          ? localizations.notLoggedIn
+                          : session.user.displayName,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: AppTheme.softText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      session == null
+                          ? localizations.localFirstNotice
+                          : localizations.loggedInAs,
+                      style: const TextStyle(
+                        color: AppTheme.mutedText,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              OutlinedButton(
-                onPressed: controller.logout,
-                child: Text(localizations.logout),
-              ),
             ],
+          ),
+          if (controller.syncMessage != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              controller.syncMessage == 'success'
+                  ? localizations.syncComplete
+                  : localizations.syncUnavailable,
+              style: const TextStyle(color: AppTheme.mutedText, fontSize: 13),
+            ),
           ],
+          const SizedBox(height: 16),
+          if (session == null)
+            FilledButton(
+              onPressed: () async {
+                await Navigator.of(context).pushNamed(AppRoutes.auth);
+                await controller.refreshAuthSession();
+              },
+              child: Text(localizations.login),
+            )
+          else ...[
+            FilledButton(
+              onPressed: controller.syncing
+                  ? null
+                  : () async {
+                      await controller.syncProgress();
+                    },
+              child: Text(
+                controller.syncing
+                    ? localizations.loadingSettings
+                    : localizations.syncProgress,
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: controller.logout,
+              child: Text(localizations.logout),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Circular mint→blue avatar showing the player's initials, or a generic
+/// person glyph when logged out — echoes the mockup profile card.
+class _AccountAvatar extends StatelessWidget {
+  const _AccountAvatar({this.displayName});
+
+  final String? displayName;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = displayName?.trim();
+    final initials = (name == null || name.isEmpty)
+        ? null
+        : name
+              .split(RegExp(r'\s+'))
+              .take(2)
+              .map((part) => part.characters.first.toUpperCase())
+              .join();
+
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [AppTheme.neonMint, AppTheme.neonBlue],
         ),
       ),
+      alignment: Alignment.center,
+      child: initials == null
+          ? const Icon(
+              Icons.person_rounded,
+              color: AppTheme.background,
+              size: 26,
+            )
+          : Text(
+              initials,
+              style: const TextStyle(
+                color: AppTheme.background,
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+              ),
+            ),
     );
   }
 }
@@ -325,23 +471,21 @@ class _ReadOnlyInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: AppTheme.softText,
-                fontWeight: FontWeight.w700,
-              ),
+    return _SettingsCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: AppTheme.softText,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 6),
-            Text(value),
-          ],
-        ),
+          ),
+          const SizedBox(height: 6),
+          Text(value),
+        ],
       ),
     );
   }
@@ -357,50 +501,48 @@ class _LanguageSelectorCard extends StatelessWidget {
     final localizations = AppLocalizations.of(context);
     final current = controller.settings.languageCode;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              localizations.language,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: AppTheme.softText,
-                fontWeight: FontWeight.w700,
+    return _SettingsCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            localizations.language,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: AppTheme.softText,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          DropdownButton<String?>(
+            key: const Key('settings-language-dropdown'),
+            isExpanded: true,
+            value: current,
+            onChanged: (code) async {
+              await controller.setLanguage(code);
+              if (!context.mounted) {
+                return;
+              }
+              AppSettingsScope.maybeOf(
+                context,
+              )?.setLocale(code == null ? null : Locale(code));
+            },
+            items: [
+              DropdownMenuItem<String?>(
+                value: null,
+                child: Text(localizations.languageSystemOption),
               ),
-            ),
-            const SizedBox(height: 6),
-            DropdownButton<String?>(
-              key: const Key('settings-language-dropdown'),
-              isExpanded: true,
-              value: current,
-              onChanged: (code) async {
-                await controller.setLanguage(code);
-                if (!context.mounted) {
-                  return;
-                }
-                AppSettingsScope.maybeOf(
-                  context,
-                )?.setLocale(code == null ? null : Locale(code));
-              },
-              items: [
-                DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text(localizations.languageSystemOption),
-                ),
-                const DropdownMenuItem<String?>(
-                  value: 'en',
-                  child: Text('English'),
-                ),
-                const DropdownMenuItem<String?>(
-                  value: 'es',
-                  child: Text('Español'),
-                ),
-              ],
-            ),
-          ],
-        ),
+              const DropdownMenuItem<String?>(
+                value: 'en',
+                child: Text('English'),
+              ),
+              const DropdownMenuItem<String?>(
+                value: 'es',
+                child: Text('Español'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -416,46 +558,44 @@ class _GameModeSelectorCard extends StatelessWidget {
     final localizations = AppLocalizations.of(context);
     final current = controller.settings.gameMode;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              localizations.gameMode,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: AppTheme.softText,
-                fontWeight: FontWeight.w700,
+    return _SettingsCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            localizations.gameMode,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: AppTheme.softText,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(localizations.gameModeHint),
+          const SizedBox(height: 12),
+          SegmentedButton<GameMode>(
+            key: GameUiKeys.gameModeSelector,
+            segments: [
+              ButtonSegment(
+                value: GameMode.twoD,
+                label: Text(localizations.gameMode2D),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(localizations.gameModeHint),
-            const SizedBox(height: 12),
-            SegmentedButton<GameMode>(
-              key: GameUiKeys.gameModeSelector,
-              segments: [
-                ButtonSegment(
-                  value: GameMode.twoD,
-                  label: Text(localizations.gameMode2D),
-                ),
-                ButtonSegment(
-                  value: GameMode.threeD,
-                  label: Text(localizations.gameMode3D),
-                ),
-              ],
-              selected: {current},
-              onSelectionChanged: (selection) async {
-                final mode = selection.first;
-                await controller.setGameMode(mode);
-                if (!context.mounted) {
-                  return;
-                }
-                AppSettingsScope.maybeOf(context)?.setGameMode(mode);
-              },
-            ),
-          ],
-        ),
+              ButtonSegment(
+                value: GameMode.threeD,
+                label: Text(localizations.gameMode3D),
+              ),
+            ],
+            selected: {current},
+            onSelectionChanged: (selection) async {
+              final mode = selection.first;
+              await controller.setGameMode(mode);
+              if (!context.mounted) {
+                return;
+              }
+              AppSettingsScope.maybeOf(context)?.setGameMode(mode);
+            },
+          ),
+        ],
       ),
     );
   }

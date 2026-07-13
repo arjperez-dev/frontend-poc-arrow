@@ -40,16 +40,16 @@ void main() {
   });
 
   // Merged-repository integration assertions: the combined list must still
-  // load all 25 levels (2D 1-20 from manual_levels_2d.json, 3D 21-25 from
+  // load all 30 levels (2D 1-20 from manual_levels_2d.json, 3D 21-30 from
   // manual_levels_3d.json) with globally-unique numbers/ids. Internal
   // numbering is unchanged by the file split (Phase 24.1).
   group('merged repository (2D + 3D)', () {
-    test('should_load_25_manual_levels_from_assets', () async {
+    test('should_load_30_manual_levels_from_assets', () async {
       final levels = await GetLocalLevelsUseCase(repository)();
 
-      expect(levels, hasLength(25));
+      expect(levels, hasLength(30));
       expect(levels.first.number, 1);
-      expect(levels.last.number, 25);
+      expect(levels.last.number, 30);
     });
 
     test('should_validate_all_manual_levels', () async {
@@ -62,7 +62,7 @@ void main() {
 
       final levels = dtos.map(mapper.toDomain).map(validator.validate).toList();
 
-      expect(levels, hasLength(25));
+      expect(levels, hasLength(30));
       expect(levels.every((level) => level.boardGraph.nodes.isNotEmpty), isTrue);
       expect(levels.every((level) => level.boardGraph.edges.isNotEmpty), isTrue);
     });
@@ -90,10 +90,10 @@ void main() {
       final levels = await GetLocalLevelsUseCase(repository)();
       final numbers = levels.map((level) => level.number).toSet();
 
-      expect(numbers, hasLength(25));
+      expect(numbers, hasLength(30));
       expect(
         numbers,
-        containsAll(List<int>.generate(25, (index) => index + 1)),
+        containsAll(List<int>.generate(30, (index) => index + 1)),
       );
     });
 
@@ -101,10 +101,11 @@ void main() {
       final levels = await GetLocalLevelsUseCase(repository)();
       final ids = levels.map((level) => level.id).toSet();
 
-      expect(ids, hasLength(25));
+      expect(ids, hasLength(30));
       expect(ids, contains('manual-001'));
       expect(ids, contains('manual-020'));
       expect(ids, contains('manual-025'));
+      expect(ids, contains('manual-030'));
     });
   });
 
@@ -539,19 +540,19 @@ void main() {
     });
   });
 
-  // 3D group (levels 21-25, manual_levels_3d.json): all-hard, multi-layer,
+  // 3D group (levels 21-30, manual_levels_3d.json): all-hard, multi-layer,
   // spanning/vertical arrows, no single-node arrows, real-gap-3D semantics,
   // and solvability. No-single-node-arrows, real-gap-3D, and solvability are
-  // already asserted generically above (they loop over all 25 levels); this
+  // already asserted generically above (they loop over all 30 levels); this
   // group adds the 3D-specific assertions those generic checks don't cover.
-  group('3D levels (21-25)', () {
+  group('3D levels (21-30)', () {
     test('should_only_contain_hard_multi_layer_levels', () async {
       final levels = await GetLocalLevelsUseCase(repository)();
       final threeD = levels.where((l) => (l.number ?? 0) >= 21).toList();
 
-      expect(threeD, hasLength(5));
+      expect(threeD, hasLength(10));
       expect(threeD.map((l) => l.number).toSet(),
-          List<int>.generate(5, (i) => i + 21).toSet());
+          List<int>.generate(10, (i) => i + 21).toSet());
       for (final level in threeD) {
         expect(_difficulty(level), 'hard',
             reason: 'Level ${level.number} is not hard');

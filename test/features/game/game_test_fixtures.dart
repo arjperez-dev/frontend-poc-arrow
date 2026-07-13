@@ -9,9 +9,11 @@ LevelDefinition basicDefinition({
   List<ArrowPathDefinition>? arrows,
   List<String>? blockedEdgeIds,
   Map<String, Object?>? metadata,
+  int? number,
 }) {
   return LevelDefinition(
     id: 'test-level',
+    number: number,
     name: 'Test Level',
     nodes: const [
       GraphNodeDefinition(id: 'a', x: 0, y: 0),

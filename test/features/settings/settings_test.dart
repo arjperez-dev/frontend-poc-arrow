@@ -88,12 +88,20 @@ void main() {
     );
 
     await tester.pumpWidget(_TestSettingsApp(controller: controller));
-    await _pumpUntilFound(tester, find.byKey(GameUiKeys.soundSwitch));
+    // The game-mode card sits near the top of the restyled screen (Phase 27);
+    // the sound switch now lives below the fold, so it can't serve as the
+    // "settings loaded" probe on the test viewport.
+    await _pumpUntilFound(tester, find.byKey(GameUiKeys.gameModeSelector));
     await tester.scrollUntilVisible(
       find.byKey(GameUiKeys.resetProgressButton),
       300,
       scrollable: find.byType(Scrollable),
     );
+    // scrollUntilVisible stops as soon as an edge enters the viewport; the
+    // button's tap target can still be below the fold on the taller Phase 27
+    // layout, so scroll the rest of the way before tapping.
+    await tester.ensureVisible(find.byKey(GameUiKeys.resetProgressButton));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(GameUiKeys.resetProgressButton));
     await tester.pumpAndSettle();

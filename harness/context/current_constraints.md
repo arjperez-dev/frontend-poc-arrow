@@ -23,10 +23,10 @@ Check every item on this list before starting any phase. Update this file when c
 
 ## Levels
 
-- `assets/levels/manual_levels_2d.json` (levels 1–20) and `assets/levels/manual_levels_3d.json` (levels 21–25) are the **authoritative hand-editable sources** (Phase 24.1 split the former single `manual_levels.json`; internal numbers stayed globally unique, no renumber). Do not run `node tool/gen_levels.js --generate-2d`, `--generate-3d`, or `--generate` unless regeneration is explicitly intended by the task.
+- `assets/levels/manual_levels_2d.json` (levels 1–20) and `assets/levels/manual_levels_3d.json` (levels 21–30) are the **authoritative hand-editable sources** (Phase 24.1 split the former single `manual_levels.json`; internal numbers stayed globally unique, no renumber). Do not run `node tool/gen_levels.js --generate-2d`, `--generate-3d`, or `--generate` unless regeneration is explicitly intended by the task.
 - `--validate-only` is always safe and reads without writing.
 - **Level 2 test contract**: name='Level 2', arrow count ≥ 10. Do not change level 2's name or arrow count below the floor without updating `test/features/game/infrastructure/manual_levels_test.dart`.
-- **25 levels total** (1–15 random rectangle boards, 16–20 figure silhouettes: heart/diamond/club/spade/crown, 21–25 multi-layer 3D levels: 23 pyramid / 24 diamond / 25 hourglass). `AppConfig.manualLevelCount` is the single source of truth for the count — do not hardcode a level count elsewhere. See `docs/LEVEL_AUTHORING.md` §15 (figure-level model) and §16 (3D-level model).
+- **30 levels total** (1–15 random rectangle boards, 16–20 figure silhouettes: heart/diamond/club/spade/crown, 21–30 multi-layer 3D levels: 23 pyramid / 24 diamond / 25 hourglass / 26 cross / 27 starburst / 28 cat / 29 helix / 30 hollow pyramid). `AppConfig.manualLevelCount` is the single source of truth for the count — do not hardcode a level count elsewhere. See `docs/LEVEL_AUTHORING.md` §15 (figure-level model) and §16 (3D-level model).
 - **No single-node arrows** (Phase 22.1): every arrow — planar or vertical — must occupy ≥ 1 edge (≥ 2 nodes). Vertical arrows always span a z-edge between two layers. Enforced by `gen_levels.js` `structureErrors` and the Dart asset test `should_have_no_single_node_arrows`; the domain validator stays permissive (unit fixtures use single-node arrows).
 - 3D levels use `generationType: '3d'` and real-gap semantics for the interior-gap check (empty space past a smaller tier's silhouette is legitimate; only a gap hiding a node further along the sweep is a defect) — mirrored in JS (`hasRealInteriorGapExit3D`) and the Dart test.
 
@@ -52,6 +52,26 @@ Check every item on this list before starting any phase. Update this file when c
 - `GraphBoard`'s `AspectRatio` is computed from the level's own node bounding box (`_boardAspectRatio`, clamped `[0.6, 1.6]`), not hardcoded to 1. Don't revert this to a fixed square without checking how it affects figure-level layouts (15, 19, 20 are notably non-square).
 - `GraphBoard.onInteractionActiveChanged` + `GameScreen._lockPageScroll` exist specifically to stop the page-level `ListView` from competing with `InteractiveViewer`'s pinch gesture (a Flutter gesture-arena race: the ancestor `Scrollable` can claim the first finger before the second lands). If you restructure `GameScreen`'s layout or `GraphBoard`'s gesture handling, preserve this pointer-count → scroll-lock coupling, or pinch-to-zoom will regress to being hard to start.
 
+## Challenges (Phase 26)
+
+- Challenge results are FULLY SEPARATE from campaign progress: a challenge
+  victory saves to `challenges.bestScores` (SharedPreferences) and must
+  never call `SaveLevelCompletionUseCase`, remote sync, or the leaderboard.
+  The separation is asserted by a dedicated test — keep it green.
+- Challenge rules (move budget, perfect-run fail, clock expiry) live in the
+  application layer (`MoveArrowUseCase` / `GameSessionService.tickClock`).
+  The controller's Timer only calls `tickClock`; do not put rules in it.
+- Scoring for challenges goes through `scoreStrategyForChallenge` — add new
+  challenge types by adding a `ScoreStrategy` implementation and a factory
+  arm, never by branching inside score computation.
+- Challenge limits are CALCULATED (`ChallengeContext.forLevel`): time =
+  max(30s, arrows × 5/4/3s − 20s by tier), moves = arrows + 5/3/2 slack by tier.
+  The `timeLimit`/`maxMoves` level metadata remain dormant — do not read
+  them for gameplay without updating this note.
+- Lives (hearts AND the six-collision game-over) are campaign-only. In
+  challenge sessions `MoveArrowUseCase` skips the lives check entirely —
+  a challenge fails only via its own rule. Do not re-couple them.
+
 ## Git
 
 - Never work on `main`.
@@ -66,4 +86,4 @@ Check every item on this list before starting any phase. Update this file when c
 
 ---
 
-*Last updated: 2026-07-10 (Phase 24.1 — 2D/3D level file split: `manual_levels.json` replaced by `manual_levels_2d.json` (1–20) + `manual_levels_3d.json` (21–25); `--generate`/`--generate-figures`/`--generate-3d` replaced by `--generate-2d`/`--generate-3d`/`--generate` shorthand; internal numbering, offset, progress/leaderboard/sync, and backend unchanged)*
+*Last updated: 2026-07-12 (Phase 27 — no new constraints; corrected the stale level count 25→30 and the 3D file range 21–25→21–30, which Phase 25 shipped but did not sync into this file. Note for future restyles: the lavender/violet palette trial was rejected by the user — the app keeps its mint/neon identity.)*
