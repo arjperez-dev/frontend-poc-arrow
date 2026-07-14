@@ -196,7 +196,13 @@ void main() {
     await tester.pumpWidget(
       _TestManualLevelsApp(levels: levels, progress: LocalProgress.initial()),
     );
-    await _pumpUntilFound(tester, find.byKey(GameUiKeys.levelCard(2)));
+    await _pumpUntilFound(tester, find.byKey(GameUiKeys.levelCard(1)));
+
+    // Internal level 2 sits mid-list in the complexity-sorted progression
+    // (no longer second), so bring its card into the viewport first.
+    await tester.scrollUntilVisible(find.byKey(GameUiKeys.levelCard(2)), 100);
+    await tester.ensureVisible(find.byKey(GameUiKeys.levelCard(2)));
+    await tester.pump();
 
     await tester.tap(find.byKey(GameUiKeys.levelCard(2)));
     await tester.pump();
@@ -571,6 +577,11 @@ class _TestGameApp extends StatelessWidget {
         levelNumber: level.number,
         enableBoardAnimations: false,
         loadLevelByNumber: (_) async => level,
+        // Deterministically unavailable: these single-level tests exercise
+        // the internal-number fallback (display number, "next level" = +1),
+        // not the complexity-sorted progression. Progression behavior is
+        // covered by game_screen_display_number_test.dart.
+        loadLevels: () async => throw StateError('no level list in harness'),
         saveLevelCompletion:
             saveLevelCompletion ??
             ({
@@ -635,6 +646,10 @@ class _TestManualLevelsApp extends StatelessWidget {
             builder: (_) => GameScreen(
               levelNumber: levelNumber,
               enableBoardAnimations: false,
+              // Real level list → the game screen resolves display/next
+              // level from the same complexity-sorted progression the
+              // selection screen lists.
+              loadLevels: () async => levels,
               loadLevelByNumber: (number) async {
                 if (level1Override != null && number == 1) {
                   return level1Override;

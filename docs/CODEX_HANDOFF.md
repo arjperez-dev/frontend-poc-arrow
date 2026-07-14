@@ -2633,3 +2633,137 @@ approved per-figure judgment); larger footprints (21/22/23/24/28) went higher.
 
 On-device validation of the redesigned 3D levels; tune any figure whose density
 fights the renderer by respacing geometry (never by changing the painter).
+
+## Phase 29 — Dynamic Level Complexity Analysis, Sorting & Progression Re-sequence (2026-07-13)
+
+### Context
+
+Branch `feat/dynamic-difficulty-sorting`. User directive: evaluate each
+level's difficulty programmatically (no hardcoded per-level difficulty),
+categorize Easy/Medium/Hard at load time so new levels self-categorize,
+always list levels easiest → hardest, and apply this to 2D and 3D while
+keeping the two strictly separated. User chose (explicit option pick) the
+**full re-sequence** model: the sorted order becomes each mode's
+progression — display numbers are 1..N by sorted position, unlock requires
+the previous SORTED level, and victory's "Next level" follows sorted order.
+Internal level numbers stay untouched everywhere else (storage, routing,
+leaderboard submission, backend) — no migration.
+
+### What Changed
+
+- **`lib/features/game/application/level_complexity.dart` (new)**:
+  `ComplexityTier` (easy/medium/hard + uppercase `label`), `LevelComplexity`
+  (raw metrics + weighted composite `score` + `tier`), and
+  `LevelComplexityAnalyzer`. Metrics, computed from the level structure
+  alone (no metadata read): active arrow count (weight 1.0); initially
+  blocked arrows (1.5) — head-only coordinate sweep mirroring
+  `MovementResolver.resolve` (reuses `MovementResolver.coveredNodeIds`,
+  which is why the analyzer lives in application, not domain); bent arrows
+  (0.5) via `orderedNodeIds` delta changes; coverage density (×10 — always
+  1.0 for generator levels due to the no-free-nodes invariant, only
+  discriminates hypothetical hand-authored levels); layers−1 (×2.0) and
+  cross-layer arrows (0.5) as the 3D volume terms. Tier thresholds
+  (easy < 45, medium < 62) are the only constants, calibrated against the
+  30 shipped levels: 2D scores span 33–103.5 → 5 easy / 7 medium / 8 hard
+  (tracks the authored tiers with reshuffling near boundaries: authored-hard
+  11 and 14 compute medium, authored-medium 8 outranks 11); 3D scores span
+  75–121 → all hard (truthful: every 3D level is deliberately hard-tier).
+- **`lib/features/game/application/level_progression.dart` (new)**:
+  `LevelProgression.fromLevels(singleModeList)` — entries sorted ascending
+  by score, stable tie-break on internal number; `displayNumberOf`,
+  `previousInternalBefore`, `nextInternalAfter`, `complexityOf`, `levels`.
+  Callers must pass an already-mode-filtered list; each mode builds its own
+  instance (2D and 3D never share a sorting pipeline).
+- **`LocalProgress.isUnlockedAfter(int? previousLevelNumber)` (domain)**:
+  the new authoritative gate — null predecessor (first in progression) →
+  unlocked; else predecessor must be completed. `isUnlockedForMode` (fixed
+  internal-number order) and the presentation `isLevelUnlockedForMode` /
+  `displayNumberFor` arithmetic helpers are kept as documented legacy
+  (fallbacks + existing tests).
+- **`LevelSelectionScreen`**: builds the progression from the mode-filtered
+  list; cards render in sorted order with positional display numbers,
+  the COMPUTED tier label (the JSON `difficulty` metadata is no longer
+  displayed — dormant like `timeLimit`/`maxMoves`), and the
+  progression-predecessor unlock gate. `GameUiKeys.levelCard(n)` and
+  navigation still use internal numbers.
+- **`LeaderboardLevelPickerScreen`**: same progression → identical order
+  and display numbers as the level list; still navigates with internal
+  numbers.
+- **`GameScreen`**: new injectable `loadLevels` (defaults to
+  `LocalLevelDependencies.createGetLocalLevelsUseCase().call`); after the
+  level loads, `_loadProgression` fetches the list, partitions by the
+  PLAYED LEVEL's own mode (`isThreeDLevel(level)`, not the settings scope),
+  and stores a `LevelProgression`. App-bar title and the victory overlay's
+  next-level number/visibility come from the progression **only when it
+  contains the played level**; otherwise (list unavailable, level not in
+  list) everything falls back to the pre-existing arithmetic mapping.
+  `_openNextLevel` pushes the progression's next INTERNAL number.
+  `_GameReadyView` now receives computed `hasNextLevel`/
+  `nextLevelDisplayNumber` instead of `gameMode`.
+
+### Consequences Worth Knowing
+
+- Real 2D order is now: 1, 5, 3, 4, 2, 10, 9, 6, 7, 11, 8, 14, 15, 20, 13,
+  16, 12, 18, 17, 19. Real 3D order: 29, 25, 27, 30, 21, 26, 23, 24, 28, 22
+  — a fresh user's first 3D level is internal 29 (double helix), not 21.
+- A returning user's completions keep counting (stored by internal number),
+  but their "next locked level" may shift to wherever their completed set
+  leaves the first un-completed slot in the NEW order.
+- 2D level 20's victory screen already stopped offering "next level"
+  (Phase 24 follow-up); now the LAST level of each progression (2D internal
+  19, 3D internal 22) is the one without a next.
+
+### Files Touched
+
+- `lib/features/game/application/level_complexity.dart` (new)
+- `lib/features/game/application/level_progression.dart` (new)
+- `lib/features/progress/domain/local_progress.dart`
+- `lib/features/levels/presentation/level_selection_screen.dart`
+- `lib/features/leaderboard/presentation/leaderboard_level_picker_screen.dart`
+- `lib/features/game/presentation/game_screen.dart`
+- `lib/features/game/presentation/level_mode_filter.dart` (legacy doc note only)
+- `test/features/game/application/level_complexity_test.dart` (new, 11 tests)
+- `test/features/game/application/level_progression_test.dart` (new, 6 tests)
+- `test/features/levels/presentation/level_selection_progression_test.dart` (new, 4 tests)
+- `test/features/game/presentation/game_screen_display_number_test.dart` (rewritten, 6 tests)
+- `test/features/progress/local_progress_test.dart` (+1 `isUnlockedAfter` test)
+- `test/features/game/game_test_fixtures.dart` (optional `number` on `collisionDefinition`)
+- `test/features/levels/level_selection_screen_game_mode_filter_test.dart` (2 tests updated to positional display)
+- `test/features/leaderboard/presentation/leaderboard_level_picker_screen_test.dart` (1 test updated)
+- `test/features/game/presentation/playable_game_ui_test.dart` (locked-level test scrolls to the card's new position; harnesses get deterministic `loadLevels`)
+- `test/features/challenges/challenge_hud_and_limits_test.dart` (deterministic `loadLevels`)
+
+### Test-Infrastructure Note
+
+`GameScreen`'s default `loadLevels` hits real assets, which is
+nondeterministic inside widget tests — every harness that mounts
+`GameScreen` now injects either a fake level list (progression path) or a
+throwing loader (deterministic internal-number fallback). Don't mount
+`GameScreen` in a widget test without one of the two.
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 260/260 passed (235 → 260; 28 new/rewritten, 3 updated).
+- `node tool/gen_levels.js --validate-only`: not run — no level files
+  touched (the JSON `difficulty` field is untouched, merely no longer
+  displayed).
+- `backend-poc-arrow`: not touched.
+
+### Limitations
+
+- Tier labels stay unlocalized uppercase (EASY/MEDIUM/HARD), matching the
+  previous raw-metadata display convention; localizing them is a small
+  follow-up (3 ARB keys).
+- Tier thresholds are calibration constants; adding levels near the 45/62
+  score boundaries may band differently than their authored tier intended.
+  The shipped-levels sanity tests in `level_complexity_test.dart` pin the
+  current banding.
+- The "initially blocked" metric measures the starting position only, not
+  full untangle depth (no solver run) — a deliberate cost/fidelity
+  trade-off.
+- Manual on-device validation pending: sorted lists in both modes, unlock
+  flow from a fresh install (first 3D level is now the helix), next-level
+  chaining across the re-sequenced order, and challenge mode inheriting the
+  same order.
+

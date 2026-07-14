@@ -4,6 +4,7 @@ import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart
 import '../../../core/app/app_settings_scope.dart';
 import '../../../core/routing/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../game/application/level_progression.dart';
 import '../../game/domain/level.dart';
 import '../../game/infrastructure/local_level_dependencies.dart';
 import '../../game/presentation/game_ui_keys.dart';
@@ -52,10 +53,16 @@ class _LeaderboardLevelPickerScreenState
             if (snapshot.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
             }
-            final levels = filterLevelsByGameMode(
-              snapshot.data ?? const <Level>[],
-              wantThreeD: gameMode == GameMode.threeD,
+            // Same single-mode, complexity-sorted progression as the level
+            // selection screen, so both lists show identical order and
+            // display numbers. 2D and 3D are filtered apart BEFORE sorting.
+            final progression = LevelProgression.fromLevels(
+              filterLevelsByGameMode(
+                snapshot.data ?? const <Level>[],
+                wantThreeD: gameMode == GameMode.threeD,
+              ),
             );
+            final levels = progression.levels;
             if (snapshot.hasError || levels.isEmpty) {
               return Center(child: Text(localizations.leaderboardUnavailable));
             }
@@ -66,7 +73,7 @@ class _LeaderboardLevelPickerScreenState
               itemBuilder: (context, index) {
                 final level = levels[index];
                 final number = level.number ?? 0;
-                final displayNumber = displayNumberFor(number, gameMode);
+                final displayNumber = index + 1;
                 return Card(
                   key: GameUiKeys.levelCard(number),
                   child: ListTile(

@@ -56,9 +56,11 @@ GameSession buildSession(LevelDefinition definition) {
 // No nodes are shared between the two arrows.
 LevelDefinition collisionDefinition({
   required List<ArrowPathDefinition> arrows,
+  int? number,
 }) {
   return LevelDefinition(
     id: 'collision-test',
+    number: number,
     name: 'Collision Test',
     nodes: const [
       GraphNodeDefinition(id: 'a', x: 0, y: 0),

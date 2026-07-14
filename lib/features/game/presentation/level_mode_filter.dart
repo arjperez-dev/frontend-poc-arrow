@@ -47,11 +47,16 @@ bool hasNextLevelFor(int internalLevel, GameMode mode) {
 int firstInternalLevelFor(GameMode mode) =>
     mode == GameMode.threeD ? twoDLevelCount + 1 : 1;
 
+/// LEGACY (Phase 29 dynamic-difficulty resequencing): fixed internal-number
+/// unlock order, superseded by the complexity-sorted progression gate
+/// (`LevelProgression` + [LocalProgress.isUnlockedAfter]) used by the level
+/// selection screen. Kept, with its tests, for the pre-resequencing rule.
+///
 /// Mode-aware unlock: the first level of a mode is always unlocked; any later
 /// level unlocks once the previous internal level was completed. Uses the
 /// shared completedLevelNumbers set, which is naturally partitioned because
 /// 2D (1-20) and 3D (21-25) internal numbers never overlap. Delegates to the
-/// authoritative domain rule ([LocalProgress.isUnlockedForMode]).
+/// domain rule ([LocalProgress.isUnlockedForMode]).
 bool isLevelUnlockedForMode(
   LocalProgress progress,
   int internalLevel,

@@ -7,6 +7,7 @@ import '../../../core/routing/game_route_args.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../challenges/domain/challenge.dart';
 import '../../challenges/infrastructure/challenge_dependencies.dart';
+import '../../game/application/level_progression.dart';
 import '../../game/domain/level.dart';
 import '../../game/infrastructure/local_level_dependencies.dart';
 import '../../game/presentation/game_ui_keys.dart';
@@ -127,27 +128,36 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
                   levels: const <Level>[],
                   progress: LocalProgress.initial(),
                 );
-            final levels = filterLevelsByGameMode(
-              screenData.levels,
-              wantThreeD: gameMode == GameMode.threeD,
+            // Complexity-sorted progression for the active mode only — the
+            // list is filtered to a single mode BEFORE sorting, so 2D and 3D
+            // never share a sorting pipeline. Display numbers, unlock order,
+            // and list order all follow the progression (easiest → hardest).
+            final progression = LevelProgression.fromLevels(
+              filterLevelsByGameMode(
+                screenData.levels,
+                wantThreeD: gameMode == GameMode.threeD,
+              ),
             );
+            final entries = progression.entries;
             final progress = screenData.progress;
             final challenge = widget.challenge;
             final levelList = ListView.separated(
               padding: const EdgeInsets.all(20),
-              itemCount: levels.length,
+              itemCount: entries.length,
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
-                final level = levels[index];
+                final entry = entries[index];
+                final level = entry.level;
                 final levelNumber = level.number ?? 0;
-                final isUnlocked = isLevelUnlockedForMode(
-                  progress,
-                  levelNumber,
-                  gameMode,
+                // Unlock follows the sorted order: the first entry is always
+                // open; later entries need the PREVIOUS ENTRY completed.
+                final isUnlocked = progress.isUnlockedAfter(
+                  index == 0 ? null : entries[index - 1].level.number,
                 );
                 return _LevelCard(
                   level: level,
-                  displayNumber: displayNumberFor(levelNumber, gameMode),
+                  displayNumber: index + 1,
+                  difficultyLabel: entry.complexity.tier.label,
                   isUnlocked: isUnlocked,
                   isCompleted: progress.isCompleted(levelNumber),
                   // Challenge mode shows the CHALLENGE best (or nothing when
@@ -230,6 +240,7 @@ class _LevelCard extends StatelessWidget {
   const _LevelCard({
     required this.level,
     required this.displayNumber,
+    required this.difficultyLabel,
     required this.isUnlocked,
     required this.isCompleted,
     required this.bestScore,
@@ -239,6 +250,10 @@ class _LevelCard extends StatelessWidget {
 
   final Level level;
   final int displayNumber;
+
+  /// Computed complexity tier label (dynamic — the hardcoded JSON
+  /// `difficulty` metadata is no longer displayed).
+  final String difficultyLabel;
   final bool isUnlocked;
   final bool isCompleted;
   final int? bestScore;
@@ -251,7 +266,6 @@ class _LevelCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final number = level.number ?? 0;
-    final difficulty = level.metadata['difficulty']?.toString() ?? '-';
     final localizations = AppLocalizations.of(context);
     final status = isCompleted
         ? localizations.completed
@@ -305,7 +319,7 @@ class _LevelCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      difficulty.toUpperCase(),
+                      difficultyLabel,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppTheme.pastelAmber,
                         letterSpacing: 1.4,

@@ -72,6 +72,29 @@ Check every item on this list before starting any phase. Update this file when c
   challenge sessions `MoveArrowUseCase` skips the lives check entirely —
   a challenge fails only via its own rule. Do not re-couple them.
 
+## Dynamic Difficulty & Progression (Phase 29)
+
+- Level list order, display numbers ("Level N"), unlock, and next-level are
+  ALL driven by `LevelProgression` (application), built per mode from the
+  mode-filtered list and sorted by `LevelComplexityAnalyzer` score. Never
+  mix 2D and 3D levels in one progression, and never derive display numbers
+  or unlock from internal numbers in new UI — use the progression. Internal
+  numbers remain the storage/routing/leaderboard keys everywhere.
+- The JSON `difficulty` field is DORMANT for display (like
+  `timeLimit`/`maxMoves`): level cards show the computed tier. Don't read
+  the metadata for UI without updating this note.
+- Unlock gate: `LocalProgress.isUnlockedAfter(previousInProgression)`.
+  `isUnlockedForMode`/`displayNumberFor`/`hasNextLevelFor` are legacy
+  fallbacks (GameScreen uses them only when the level list can't load) —
+  don't wire new features to them.
+- Analyzer tier thresholds (easy < 45, medium < 62) are calibrated against
+  the shipped 30 levels and pinned by `level_complexity_test.dart`'s
+  shipped-levels group; recalibrate BOTH together if level content or
+  weights change.
+- Widget tests mounting `GameScreen` must inject `loadLevels` (a fake list
+  for progression behavior, or a throwing loader for the fallback) — the
+  real-asset default is nondeterministic under flutter_test.
+
 ## Git
 
 - Never work on `main`.
@@ -86,4 +109,4 @@ Check every item on this list before starting any phase. Update this file when c
 
 ---
 
-*Last updated: 2026-07-12 (Phase 27 — no new constraints; corrected the stale level count 25→30 and the 3D file range 21–25→21–30, which Phase 25 shipped but did not sync into this file. Note for future restyles: the lavender/violet palette trial was rejected by the user — the app keeps its mint/neon identity.)*
+*Last updated: 2026-07-13 (Phase 29 — added the "Dynamic Difficulty & Progression" section: complexity-sorted per-mode progressions now own list order, display numbers, unlock, and next-level; JSON `difficulty` metadata demoted to dormant; GameScreen widget tests must inject `loadLevels`.)*

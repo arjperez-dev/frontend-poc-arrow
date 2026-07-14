@@ -128,7 +128,7 @@ void main() {
   );
 
   testWidgets(
-    'should_map_3d_internal_level_numbers_21_to_25_as_display_1_to_5',
+    'should_display_3d_levels_as_positions_1_to_n_in_sorted_progression',
     (tester) async {
       final levels = [_fakeThreeDLevel(21), _fakeThreeDLevel(23)];
 
@@ -137,8 +137,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // Display numbers are positions in the complexity-sorted 3D
+      // progression (fixtures tie on complexity, so internal-number order
+      // holds): internal 21 -> "Level 1", internal 23 -> "Level 2".
       expect(find.text('Level 1'), findsOneWidget);
-      expect(find.text('Level 3'), findsOneWidget);
+      expect(find.text('Level 2'), findsOneWidget);
       expect(find.text('Level 21'), findsNothing);
       expect(find.text('Level 23'), findsNothing);
     },

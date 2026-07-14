@@ -9,7 +9,9 @@ import '../../audio/infrastructure/audio_manager.dart';
 import '../../challenges/domain/challenge.dart';
 import '../../challenges/infrastructure/challenge_dependencies.dart';
 import '../../settings/domain/game_mode.dart';
+import '../application/level_progression.dart';
 import '../domain/game_session.dart';
+import '../domain/level.dart';
 import '../infrastructure/local_level_dependencies.dart';
 import '../../progress/infrastructure/local_progress_dependencies.dart';
 import 'game_screen_controller.dart';
@@ -23,6 +25,7 @@ class GameScreen extends StatefulWidget {
     required this.levelNumber,
     this.challenge,
     this.loadLevelByNumber,
+    this.loadLevels,
     this.saveLevelCompletion,
     this.notifyRemoteLevelCompletion,
     this.getBestLevelResult,
@@ -40,6 +43,13 @@ class GameScreen extends StatefulWidget {
   final Challenge? challenge;
 
   final LoadLevelByNumber? loadLevelByNumber;
+
+  /// Loads the full level list so the screen can place the current level in
+  /// its mode's complexity-sorted [LevelProgression] (display number in the
+  /// app bar, next level on victory). Best-effort: when it fails, the screen
+  /// falls back to internal-number ordering.
+  final Future<List<Level>> Function()? loadLevels;
+
   final SaveLevelCompletion? saveLevelCompletion;
   final NotifyRemoteLevelCompletion? notifyRemoteLevelCompletion;
   final GetBestLevelResult? getBestLevelResult;
@@ -59,6 +69,12 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   GameScreenController? _controller;
+
+  // Complexity-sorted progression of the played level's OWN mode (2D or 3D,
+  // partitioned by the level itself, never mixed). Null until loaded or when
+  // the level list can't be loaded — display then falls back to the
+  // arithmetic internal-number mapping.
+  LevelProgression? _progression;
   // Only set when a [BackgroundMusicController] is injected (tests). In
   // production music is owned by the app-lifetime [AudioManager] singleton,
   // so there's nothing screen-local to stop/dispose for it.
@@ -133,6 +149,35 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     await controller.load();
+    await _loadProgression(controller);
+  }
+
+  /// Builds the progression for the played level's own mode. Best-effort:
+  /// a failure leaves `_progression` null and the screen on the
+  /// internal-number fallback — gameplay itself is unaffected.
+  Future<void> _loadProgression(GameScreenController controller) async {
+    final level = controller.level;
+    if (level == null) {
+      return;
+    }
+    try {
+      final loadLevels =
+          widget.loadLevels ??
+          LocalLevelDependencies.createGetLocalLevelsUseCase().call;
+      final allLevels = await loadLevels();
+      final sameModeLevels = filterLevelsByGameMode(
+        allLevels,
+        wantThreeD: isThreeDLevel(level),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _progression = LevelProgression.fromLevels(sameModeLevels);
+      });
+    } catch (_) {
+      // Fall back to internal-number ordering.
+    }
   }
 
   static Future<GetChallengeBestScore> _productionChallengeBest() async {
@@ -188,9 +233,35 @@ class _GameScreenState extends State<GameScreen> {
           final gameMode =
               AppSettingsScope.maybeOf(context)?.gameMode ?? GameMode.twoD;
           final internalNumber = controller.level?.number;
+          final progression = _progression;
+          // The progression drives display number and next level only when
+          // it actually contains the played level; otherwise (not loaded,
+          // failed to load, or a level outside the loaded list) everything
+          // falls back to the arithmetic internal-number mapping.
+          final inProgression = internalNumber != null &&
+              progression?.displayNumberOf(internalNumber) != null;
           final title = internalNumber == null
               ? localizations.loadingLevel
+              : inProgression
+              ? 'Level ${progression!.displayNumberOf(internalNumber)}'
               : 'Level ${displayNumberFor(internalNumber, gameMode)}';
+
+          // Next level follows the sorted progression (easiest → hardest),
+          // not internal-number order. Fallback mirrors the pre-resequencing
+          // behavior.
+          final nextInternal = internalNumber == null
+              ? null
+              : inProgression
+              ? progression!.nextInternalAfter(internalNumber)
+              : hasNextLevelFor(internalNumber, gameMode)
+              ? internalNumber + 1
+              : null;
+          final nextDisplayNumber = nextInternal == null
+              ? 0
+              : inProgression
+              ? progression!.displayNumberOf(nextInternal) ??
+                    displayNumberFor(nextInternal, gameMode)
+              : displayNumberFor(nextInternal, gameMode);
 
           return Scaffold(
             appBar: AppBar(title: Text(title)),
@@ -207,7 +278,8 @@ class _GameScreenState extends State<GameScreen> {
                 ),
                 GameScreenLoadState.ready => _GameReadyView(
                   controller: controller,
-                  gameMode: gameMode,
+                  hasNextLevel: nextInternal != null,
+                  nextLevelDisplayNumber: nextDisplayNumber,
                   animateBoard: widget.enableBoardAnimations,
                   onBackToLevels: _backToLevels,
                   onNextLevel: _openNextLevel,
@@ -236,7 +308,11 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _openNextLevel() {
-    final nextLevelNumber = (_controller?.level?.number ?? 0) + 1;
+    final currentNumber = _controller?.level?.number ?? 0;
+    // Progression order (easiest → hardest), falling back to internal-number
+    // order when the progression isn't available.
+    final nextLevelNumber =
+        _progression?.nextInternalAfter(currentNumber) ?? (currentNumber + 1);
     final challenge = widget.challenge;
     Navigator.of(context).pushReplacementNamed(
       AppRoutes.game,
@@ -261,7 +337,8 @@ class _GameScreenState extends State<GameScreen> {
 class _GameReadyView extends StatelessWidget {
   const _GameReadyView({
     required this.controller,
-    required this.gameMode,
+    required this.hasNextLevel,
+    required this.nextLevelDisplayNumber,
     required this.animateBoard,
     required this.onBackToLevels,
     required this.onNextLevel,
@@ -271,7 +348,12 @@ class _GameReadyView extends StatelessWidget {
   });
 
   final GameScreenController controller;
-  final GameMode gameMode;
+
+  /// Computed by [GameScreen] from the mode's complexity-sorted progression
+  /// (with an internal-number fallback while it loads).
+  final bool hasNextLevel;
+  final int nextLevelDisplayNumber;
+
   final bool animateBoard;
   final VoidCallback onBackToLevels;
   final VoidCallback onNextLevel;
@@ -348,11 +430,8 @@ class _GameReadyView extends StatelessWidget {
                 : controller.challengeBestScore,
             isChallenge: controller.challenge != null,
             isNewChallengeRecord: controller.isNewChallengeRecord,
-            hasNextLevel: hasNextLevelFor(level.number ?? 0, gameMode),
-            nextLevelDisplayNumber: displayNumberFor(
-              (level.number ?? 0) + 1,
-              gameMode,
-            ),
+            hasNextLevel: hasNextLevel,
+            nextLevelDisplayNumber: nextLevelDisplayNumber,
             onRetry: controller.restart,
             onBackToLevels: onBackToLevels,
             onNextLevel: onNextLevel,

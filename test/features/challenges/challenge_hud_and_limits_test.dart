@@ -101,6 +101,8 @@ void main() {
             challenge: Challenge.moveLimit,
             loadLevelByNumber: (_) async =>
                 buildLevel(basicDefinition(number: 1)),
+            loadLevels: () async =>
+                throw StateError('no level list in harness'),
             saveLevelCompletion: ({
               required int levelNumber,
               required int score,

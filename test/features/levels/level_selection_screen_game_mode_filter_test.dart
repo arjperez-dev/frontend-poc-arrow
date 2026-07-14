@@ -46,29 +46,35 @@ void main() {
   );
 
   testWidgets(
-    'should_display_2d_level_numbers_unchanged',
+    'should_display_2d_levels_as_positions_in_sorted_progression',
     (tester) async {
       await tester.pumpWidget(
         _TestApp(levels: _mixedLevels(), gameMode: GameMode.twoD),
       );
       await tester.pumpAndSettle();
 
+      // Both 2D fixtures tie on complexity, so order falls back to internal
+      // number: internal 1 -> "Level 1", internal 20 -> "Level 2" (display
+      // numbers are 1..N positions in the sorted progression).
       expect(find.text('Level 1'), findsOneWidget);
-      expect(find.text('Level 20'), findsOneWidget);
+      expect(find.text('Level 2'), findsOneWidget);
+      expect(find.text('Level 20'), findsNothing);
     },
   );
 
   testWidgets(
-    'should_map_3d_internal_level_numbers_21_to_25_as_display_1_to_5',
+    'should_display_3d_levels_as_positions_1_to_n_in_sorted_progression',
     (tester) async {
       await tester.pumpWidget(
         _TestApp(levels: _mixedLevels(), gameMode: GameMode.threeD),
       );
       await tester.pumpAndSettle();
 
-      // Internal 21 -> displayed "Level 1"; internal 23 -> displayed "Level 3".
+      // Internal 21 -> displayed "Level 1"; internal 23 -> displayed
+      // "Level 2" (position in the 3D progression, never the internal
+      // number and never influenced by the 2D list).
       expect(find.text('Level 1'), findsOneWidget);
-      expect(find.text('Level 3'), findsOneWidget);
+      expect(find.text('Level 2'), findsOneWidget);
       expect(find.text('Level 21'), findsNothing);
       expect(find.text('Level 23'), findsNothing);
     },

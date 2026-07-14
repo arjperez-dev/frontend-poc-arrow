@@ -46,6 +46,19 @@ void main() {
     expect(completed3D21.isUnlockedForMode(22, GameMode.threeD), isTrue);
   });
 
+  test('should_unlock_progression_first_level_and_gate_on_predecessor', () {
+    // isUnlockedAfter is the authoritative gate since the dynamic-difficulty
+    // resequencing: null predecessor = first in the mode's sorted
+    // progression (always open); otherwise the predecessor must be done.
+    final progress = LocalProgress.initial().copyWith(
+      completedLevelNumbers: const <int>{9},
+    );
+
+    expect(progress.isUnlockedAfter(null), isTrue);
+    expect(progress.isUnlockedAfter(9), isTrue);
+    expect(progress.isUnlockedAfter(4), isFalse);
+  });
+
   test('should_unlock_next_level_when_current_level_is_completed', () async {
     final repository = _InMemoryLocalProgressRepository();
     final saveCompletion = SaveLevelCompletionUseCase(repository);

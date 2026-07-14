@@ -40,6 +40,17 @@ class LocalProgress {
   /// completed. This is the authoritative rule for the level-selection gate;
   /// [isUnlocked] (scalar [lastUnlockedLevel]) is retained only for reset /
   /// backward-compat.
+  /// Progression-order unlock: a level is unlocked when it is the first of
+  /// its mode's progression ([previousLevelNumber] == null) or when the level
+  /// preceding it in that progression has been completed. The caller supplies
+  /// the predecessor from the mode's complexity-sorted [LevelProgression]
+  /// (never from another mode's list). This is the authoritative rule for the
+  /// level-selection gate since the dynamic-difficulty resequencing;
+  /// [isUnlockedForMode] (fixed internal-number order) is retained as legacy.
+  bool isUnlockedAfter(int? previousLevelNumber) {
+    return previousLevelNumber == null || isCompleted(previousLevelNumber);
+  }
+
   bool isUnlockedForMode(int levelNumber, GameMode mode) {
     final firstInternalLevel = mode == GameMode.threeD ? _twoDLevelCount + 1 : 1;
     if (levelNumber == firstInternalLevel) {
