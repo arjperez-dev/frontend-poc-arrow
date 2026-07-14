@@ -157,7 +157,7 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
                 return _LevelCard(
                   level: level,
                   displayNumber: index + 1,
-                  difficultyLabel: entry.complexity.tier.label,
+                  difficultyLabel: entry.tier.label,
                   isUnlocked: isUnlocked,
                   isCompleted: progress.isCompleted(levelNumber),
                   // Challenge mode shows the CHALLENGE best (or nothing when

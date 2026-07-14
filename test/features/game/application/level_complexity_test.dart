@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend_poc_arrow/features/game/application/get_local_levels_use_case.dart';
 import 'package:frontend_poc_arrow/features/game/application/level_complexity.dart';
+import 'package:frontend_poc_arrow/features/game/application/level_progression.dart';
 import 'package:frontend_poc_arrow/features/game/domain/direction.dart';
 import 'package:frontend_poc_arrow/features/game/domain/layer_direction.dart';
 import 'package:frontend_poc_arrow/features/game/domain/level.dart';
@@ -179,16 +180,11 @@ void main() {
         greaterThan(analyzer.analyze(straightLevel()).score),
       );
     });
-
-    test('should_categorize_small_fixture_levels_as_easy', () {
-      expect(analyzer.analyze(freeLevel()).tier, ComplexityTier.easy);
-      expect(analyzer.analyze(multiLayerLevel()).tier, ComplexityTier.easy);
-    });
   });
 
-  // Sanity over the real shipped levels: categorization is computed at load
-  // time from structure alone, spreads 2D across all three tiers, and keeps
-  // every (deliberately hard) 3D level in the hard band.
+  // Sanity over the real shipped levels: scores are computed at load time
+  // from structure alone, and the rank-relative banding spreads EACH mode's
+  // progression (2D and 3D independently) across all three tiers.
   group('shipped levels', () {
     late List<Level> levels;
 
@@ -201,30 +197,29 @@ void main() {
       levels = await GetLocalLevelsUseCase(repository)();
     });
 
-    test('should_assign_a_tier_and_positive_score_to_every_level', () {
+    test('should_assign_a_positive_score_to_every_level', () {
       for (final level in levels) {
         final complexity = analyzer.analyze(level);
         expect(complexity.score, greaterThan(0), reason: 'L${level.number}');
-        expect(ComplexityTier.values, contains(complexity.tier));
       }
     });
 
-    test('should_spread_2d_levels_across_all_three_tiers', () {
-      final tiers = levels
-          .where((level) => !isThreeDLevel(level))
-          .map((level) => analyzer.analyze(level).tier)
-          .toSet();
+    test('should_spread_2d_progression_across_all_three_tiers', () {
+      final progression = LevelProgression.fromLevels(
+        filterLevelsByGameMode(levels, wantThreeD: false),
+      );
+      final tiers = progression.entries.map((entry) => entry.tier).toSet();
 
       expect(tiers, ComplexityTier.values.toSet());
     });
 
-    test('should_categorize_every_3d_level_as_hard', () {
-      final tiers = levels
-          .where(isThreeDLevel)
-          .map((level) => analyzer.analyze(level).tier)
-          .toSet();
+    test('should_spread_3d_progression_across_all_three_tiers', () {
+      final progression = LevelProgression.fromLevels(
+        filterLevelsByGameMode(levels, wantThreeD: true),
+      );
+      final tiers = progression.entries.map((entry) => entry.tier).toSet();
 
-      expect(tiers, {ComplexityTier.hard});
+      expect(tiers, ComplexityTier.values.toSet());
     });
   });
 }

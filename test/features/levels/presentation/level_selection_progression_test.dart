@@ -76,9 +76,11 @@ void main() {
     await tester.pumpWidget(_TestApp(levels: levels()));
     await tester.pumpAndSettle();
 
-    // Both fixtures score below the easy bound; the label comes from the
-    // analyzer, not from the levels' metadata (which says 'test').
-    expect(find.text('EASY'), findsNWidgets(2));
+    // Rank-relative banding over the two-level progression: the easier
+    // fixture is EASY, the harder one MEDIUM. The label comes from the
+    // computed band, not from the levels' metadata (which says 'test').
+    expect(find.text('EASY'), findsOneWidget);
+    expect(find.text('MEDIUM'), findsOneWidget);
     expect(find.text('TEST'), findsNothing);
   });
 

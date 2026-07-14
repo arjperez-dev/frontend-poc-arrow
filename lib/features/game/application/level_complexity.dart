@@ -8,7 +8,10 @@ import 'movement_resolver.dart';
 /// Dynamically computed difficulty band for a level. Replaces the hardcoded
 /// `difficulty` string shipped in the level JSON (which stays in the file as
 /// dormant metadata, like `timeLimit`/`maxMoves`): every level — including
-/// future ones — is categorized from its own structure at load time.
+/// future ones — is categorized at load time. Bands are RELATIVE to the
+/// mode's own level set (assigned by sorted rank in `LevelProgression`, not
+/// by absolute score thresholds), so both 2D and 3D always spread across
+/// easy/medium/hard even though every 3D level outscores every easy 2D one.
 enum ComplexityTier {
   easy,
   medium,
@@ -19,12 +22,12 @@ enum ComplexityTier {
   String get label => name.toUpperCase();
 }
 
-/// The measured complexity of one level: the raw metrics, the weighted
-/// composite [score], and the [tier] band the score falls into.
+/// The measured complexity of one level: the raw metrics and the weighted
+/// composite [score]. The easy/medium/hard band is NOT stored here — it is
+/// relative to the mode's level set and assigned by `LevelProgression`.
 class LevelComplexity {
   const LevelComplexity({
     required this.score,
-    required this.tier,
     required this.arrowCount,
     required this.blockedArrowCount,
     required this.bentArrowCount,
@@ -34,7 +37,6 @@ class LevelComplexity {
   });
 
   final double score;
-  final ComplexityTier tier;
 
   /// Active arrows — the minimum number of taps to solve the level.
   final int arrowCount;
@@ -60,9 +62,10 @@ class LevelComplexity {
 /// Evaluates a level's complexity from its structure alone — no metadata is
 /// read, so newly authored levels are categorized automatically.
 ///
-/// The composite score is a weighted sum of the metrics on [LevelComplexity];
-/// the tier thresholds below are the only fixed constants and were calibrated
-/// against the 30 shipped levels (see `level_complexity_test.dart`).
+/// The composite score is a weighted sum of the metrics on [LevelComplexity].
+/// Scores only need to ORDER levels correctly within a mode: the
+/// easy/medium/hard band comes from the sorted rank in `LevelProgression`,
+/// so no absolute score threshold exists to recalibrate when content changes.
 class LevelComplexityAnalyzer {
   const LevelComplexityAnalyzer();
 
@@ -71,12 +74,6 @@ class LevelComplexityAnalyzer {
   static const double _densityWeight = 10.0;
   static const double _layerWeight = 2.0;
   static const double _verticalWeight = 0.5;
-
-  // Calibrated against the 30 shipped levels (2026-07-13): 2D scores span
-  // 33-103.5 and band as 5 easy / 7 medium / 8 hard; 3D scores span 75-121,
-  // all hard — truthful, since every 3D level is deliberately hard-tier.
-  static const double _easyUpperBound = 45.0;
-  static const double _mediumUpperBound = 62.0;
 
   LevelComplexity analyze(Level level) {
     final graph = level.boardGraph;
@@ -118,7 +115,6 @@ class LevelComplexityAnalyzer {
 
     return LevelComplexity(
       score: score,
-      tier: _tierFor(score),
       arrowCount: arrows.length,
       blockedArrowCount: blockedCount,
       bentArrowCount: bentCount,
@@ -126,16 +122,6 @@ class LevelComplexityAnalyzer {
       layerCount: layerCount,
       verticalArrowCount: verticalCount,
     );
-  }
-
-  ComplexityTier _tierFor(double score) {
-    if (score < _easyUpperBound) {
-      return ComplexityTier.easy;
-    }
-    if (score < _mediumUpperBound) {
-      return ComplexityTier.medium;
-    }
-    return ComplexityTier.hard;
   }
 
   /// Same head-only coordinate sweep as [MovementResolver.resolve], evaluated

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend_poc_arrow/features/game/application/level_complexity.dart';
 import 'package:frontend_poc_arrow/features/game/application/level_progression.dart';
 import 'package:frontend_poc_arrow/features/game/domain/direction.dart';
 import 'package:frontend_poc_arrow/features/game/domain/level.dart';
@@ -96,6 +97,38 @@ void main() {
     expect(progression.complexityOf(1)!.arrowCount, 2);
     expect(progression.complexityOf(9)!.arrowCount, 1);
     expect(progression.complexityOf(999), isNull);
+  });
+
+  test('should_band_tiers_by_thirds_of_sorted_rank', () {
+    // Rank-relative banding: with three levels there is exactly one of each
+    // band, ordered easiest → hardest (ties fall back to internal number).
+    final progression = LevelProgression.fromLevels([
+      simple(7),
+      simple(4),
+      simple(9),
+    ]);
+
+    expect(
+      progression.entries.map((entry) => entry.tier).toList(),
+      [ComplexityTier.easy, ComplexityTier.medium, ComplexityTier.hard],
+    );
+  });
+
+  test('should_degrade_tier_banding_gracefully_for_tiny_lists', () {
+    expect(
+      LevelProgression.fromLevels([simple(1)])
+          .entries
+          .map((entry) => entry.tier)
+          .toList(),
+      [ComplexityTier.easy],
+    );
+    expect(
+      LevelProgression.fromLevels([complex(1), simple(9)])
+          .entries
+          .map((entry) => entry.tier)
+          .toList(),
+      [ComplexityTier.easy, ComplexityTier.medium],
+    );
   });
 
   test('should_handle_empty_level_list', () {
