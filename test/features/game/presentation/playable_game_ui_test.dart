@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart';
@@ -347,6 +349,135 @@ void main() {
       await _pumpUntilFound(tester, find.byKey(GameUiKeys.levelCard(1)));
 
       expect(saveCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'should_await_completion_save_before_navigating_on_back_to_levels_tap',
+    (tester) async {
+      final saveCompleter = Completer<void>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark(),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: GameScreen(
+            levelNumber: 1,
+            enableBoardAnimations: false,
+            loadLevelByNumber: (_) async => _singleNodeExitLevel(),
+            loadLevels: () async =>
+                throw StateError('no level list in harness'),
+            saveLevelCompletion:
+                ({
+                  required int levelNumber,
+                  required int score,
+                  required int moves,
+                  required int timeSeconds,
+                }) => saveCompleter.future,
+            getBestLevelResult: (_) async => null,
+            notifyRemoteLevelCompletion:
+                ({
+                  required int levelNumber,
+                  required int score,
+                  required int moves,
+                  required int timeSeconds,
+                }) async {},
+            playGameAudio: (_) async {},
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name == AppRoutes.levels) {
+              return MaterialPageRoute<void>(
+                settings: settings,
+                builder: (_) => const Scaffold(body: Text('LEVELS_SCREEN')),
+              );
+            }
+            return null;
+          },
+        ),
+      );
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.gameBoard));
+
+      await tester.tapAt(_singleNodePosition(tester));
+      await tester.pump();
+      expect(find.byKey(GameUiKeys.victoryCard), findsOneWidget);
+
+      await tester.tap(find.byKey(GameUiKeys.backToLevelsButton));
+      await tester.pump();
+
+      // Save is still pending — navigation must not have happened yet.
+      expect(find.text('LEVELS_SCREEN'), findsNothing);
+      expect(find.byKey(GameUiKeys.victoryCard), findsOneWidget);
+
+      saveCompleter.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('LEVELS_SCREEN'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'should_await_completion_save_before_navigating_on_next_level_tap',
+    (tester) async {
+      final saveCompleter = Completer<void>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark(),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: GameScreen(
+            levelNumber: 1,
+            enableBoardAnimations: false,
+            loadLevelByNumber: (_) async => _singleNodeExitLevel(),
+            loadLevels: () async =>
+                throw StateError('no level list in harness'),
+            saveLevelCompletion:
+                ({
+                  required int levelNumber,
+                  required int score,
+                  required int moves,
+                  required int timeSeconds,
+                }) => saveCompleter.future,
+            getBestLevelResult: (_) async => null,
+            notifyRemoteLevelCompletion:
+                ({
+                  required int levelNumber,
+                  required int score,
+                  required int moves,
+                  required int timeSeconds,
+                }) async {},
+            playGameAudio: (_) async {},
+          ),
+          onGenerateRoute: (settings) {
+            if (settings.name == AppRoutes.game) {
+              return MaterialPageRoute<void>(
+                settings: settings,
+                builder: (_) =>
+                    const Scaffold(body: Text('NEXT_LEVEL_SCREEN')),
+              );
+            }
+            return null;
+          },
+        ),
+      );
+      await _pumpUntilFound(tester, find.byKey(GameUiKeys.gameBoard));
+
+      await tester.tapAt(_singleNodePosition(tester));
+      await tester.pump();
+      expect(find.byKey(GameUiKeys.victoryCard), findsOneWidget);
+
+      await tester.tap(find.byKey(GameUiKeys.nextLevelButton));
+      await tester.pump();
+
+      // Save is still pending — navigation must not have happened yet.
+      expect(find.text('NEXT_LEVEL_SCREEN'), findsNothing);
+      expect(find.byKey(GameUiKeys.victoryCard), findsOneWidget);
+
+      saveCompleter.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('NEXT_LEVEL_SCREEN'), findsOneWidget);
     },
   );
 

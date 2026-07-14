@@ -9,6 +9,10 @@
 
 ## Completed Phase
 
+- Phase 31: Close the Victory-Overlay Save Race (Back to Levels / Next Level).
+
+Previously completed:
+
 - Phase 23: Bug Fixes & Polish (Save-Race Hardening + Leaderboard Picker Coverage).
 
 Previous completed and merged phases:
@@ -2766,4 +2770,60 @@ throwing loader (deterministic internal-number fallback). Don't mount
   flow from a fresh install (first 3D level is now the helix), next-level
   chaining across the re-sequenced order, and challenge mode inheriting the
   same order.
+
+## Phase 31 — Close the Victory-Overlay Save Race (Back to Levels / Next Level)
+
+### What Changed
+
+- Phase 23 closed the local-progress save race for the Android system back
+  button and the app-bar back arrow by awaiting `controller.completionSettled`
+  inside `PopScope.onPopInvokedWithResult` before popping. The two in-app
+  victory-overlay buttons ("Back to Levels", "Next Level") navigate via
+  `pushNamedAndRemoveUntil`/`pushReplacementNamed`, not a pop, so they bypassed
+  `PopScope` entirely and could read stale unlock/best-score state on the
+  first return to level selection.
+- `_backToLevels()` and `_openNextLevel()` in `game_screen.dart` are now
+  `async`. Each captures `Navigator.of(context)` (and, for next-level, the
+  challenge and computed next-level number) before `await
+  controller.completionSettled`, re-checks `if (!mounted) return;` after the
+  await, then navigates — mirroring the existing `PopScope` guard pattern.
+  When no victory occurred, `completionSettled` is an already-resolved
+  future, so navigation proceeds with no perceptible stall.
+- `onBackToLevels`/`onNextLevel` stayed typed as `VoidCallback`; the async
+  handlers are fire-and-forget from the button's perspective (Dart allows an
+  `async` method as a `void Function()` — the returned `Future` is discarded).
+  No changes to `_GameReadyView`, `_VictoryOverlay`, or `_GameOverOverlay`
+  signatures were needed.
+- Remote-sync behavior is unchanged: `_notifyRemoteCompletionBestEffort`
+  stays unawaited/best-effort; `completionSettled` continues to gate on the
+  local save only.
+
+### Files Touched
+
+- `lib/features/game/presentation/game_screen.dart`
+- `test/features/game/presentation/playable_game_ui_test.dart`
+
+### Verification Results
+
+- `flutter analyze`: no issues.
+- `flutter test`: 263/263 passed (261 → 263; 2 new).
+- `node tool/gen_levels.js --validate-only`: not applicable (no level files
+  touched).
+- `backend-poc-arrow`: not touched.
+
+### New Tests
+
+- `should_await_completion_save_before_navigating_on_back_to_levels_tap`
+- `should_await_completion_save_before_navigating_on_next_level_tap`
+
+Both inject a `saveLevelCompletion` fake gated on a `Completer<void>`, drive
+a victory, tap the respective victory-overlay button, and assert the target
+route has not been pushed until the completer resolves.
+
+### Limitations
+
+- Manual on-device validation of this fix (rapid tap-through from victory to
+  level selection / next level, confirming no stale unlock/best-score flash)
+  is still pending, consistent with the broader manual-validation backlog
+  noted in earlier phases.
 
