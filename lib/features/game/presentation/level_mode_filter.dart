@@ -8,12 +8,23 @@ import '../domain/level.dart';
 /// internal numbers themselves are never changed anywhere else.
 const int twoDLevelCount = 20;
 
-/// A level is 3D when its board has more than one layer, or (as a fallback
-/// for any level whose board hasn't been fully resolved) its number falls in
-/// the reserved 3D range (21-25). Presentation-only: does not touch domain,
+/// Numbers at or above this floor are backend-served remote levels (Phase
+/// 34.1 `DYNAMIC_LEVELS_CONTRACT.md` §2) — their graph shape is always the
+/// real, reliable signal, so the local-only numeric fallback below must not
+/// apply to them (a remote 2D level's number is always > [twoDLevelCount]
+/// and would otherwise be misrouted as 3D).
+const int _remoteLevelNumberFloor = 1000;
+
+/// A level is 3D when its board has more than one layer, or — for a *local*
+/// level whose board hasn't been fully resolved — its number falls in the
+/// reserved 3D range (21-30). Presentation-only: does not touch domain,
 /// application, or the level loader.
 bool isThreeDLevel(Level level) {
-  return level.boardGraph.isMultiLayer || (level.number ?? 0) > twoDLevelCount;
+  final number = level.number ?? 0;
+  if (number >= _remoteLevelNumberFloor) {
+    return level.boardGraph.isMultiLayer;
+  }
+  return level.boardGraph.isMultiLayer || number > twoDLevelCount;
 }
 
 List<Level> filterLevelsByGameMode(

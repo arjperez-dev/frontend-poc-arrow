@@ -99,7 +99,8 @@ class _GameScreenState extends State<GameScreen> {
       levelNumber: widget.levelNumber,
       loadLevelByNumber:
           widget.loadLevelByNumber ??
-          LocalLevelDependencies.createGetLocalLevelByNumberUseCase().call,
+          (await LocalLevelDependencies.createGetLocalLevelByNumberUseCase())
+              .call,
       saveLevelCompletion:
           widget.saveLevelCompletion ??
           (await LocalProgressDependencies.createSaveLevelCompletionUseCase())
@@ -163,7 +164,7 @@ class _GameScreenState extends State<GameScreen> {
     try {
       final loadLevels =
           widget.loadLevels ??
-          LocalLevelDependencies.createGetLocalLevelsUseCase().call;
+          (await LocalLevelDependencies.createGetLocalLevelsUseCase()).call;
       final allLevels = await loadLevels();
       final sameModeLevels = filterLevelsByGameMode(
         allLevels,

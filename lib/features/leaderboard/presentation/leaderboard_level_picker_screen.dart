@@ -31,10 +31,10 @@ class _LeaderboardLevelPickerScreenState
     extends State<LeaderboardLevelPickerScreen> {
   late final Future<List<Level>> _levelsFuture = _loadLevels();
 
-  Future<List<Level>> _loadLevels() {
+  Future<List<Level>> _loadLevels() async {
     final loadLevels =
         widget.loadLevels ??
-        LocalLevelDependencies.createGetLocalLevelsUseCase().call;
+        (await LocalLevelDependencies.createGetLocalLevelsUseCase()).call;
     return loadLevels();
   }
 

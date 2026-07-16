@@ -423,3 +423,33 @@ nodes, edges, arrows — extended with a third axis:
   `manual_levels_3d.json` levels 21–30 from the deterministic builders;
   `manual_levels_2d.json` is a separate file and is never touched by this
   mode) and `--validate-only` (both files, 25 levels total, never writes).
+
+## 17. Remote/dynamic levels (Phase 34)
+
+- Levels 1–30 (this document, §2–16) remain the **offline source of truth**:
+  they always load from the bundled assets and never depend on the backend.
+- The backend can additionally serve extra, real, playable levels reserved
+  in the number band **`>= 1000`** (`remoteLevel.number = 1000 + n`, assigned
+  in creation order, never reused — see
+  `backend-poc-arrow/docs/DYNAMIC_LEVELS_CONTRACT.md`). These are authored in
+  `backend-poc-arrow/prisma/levels/remote-levels.ts` and seeded via
+  `seedRemoteLevels()`, not through the local JSON files or `gen_levels.js`.
+- At startup the app fetches `GET /levels`, keeps only rows with
+  `number >= 1000` (`ApiRemoteLevelDefinitionRepository`), and merges them
+  into the local list (`MergedLevelRepository`): local always wins on a
+  number conflict, and any remote level not present locally is appended.
+  The last successfully fetched batch is cached (`RemoteLevelCache`,
+  SharedPreferences) so it stays playable offline after the first fetch.
+- The fetch/merge/cache path is entirely best-effort — a network failure,
+  empty response, or malformed entry falls back to the cache, then to
+  local-only, and never breaks level selection, gameplay, or unlocking.
+- 2D vs 3D is decided by real graph shape (`boardGraph.isMultiLayer`), not
+  by number, for any level `>= 1000` — the local-only "number > 20 ⇒ 3D"
+  fallback used for levels 21–30 does not apply to the remote band.
+- Gated by `AppConfig.enableRemoteLevels` (`--dart-define=ENABLE_REMOTE_LEVELS`),
+  **off by default** — see Phase 34.5 notes in `harness/context/phase_registry.md`
+  for what blocks flipping it on by default.
+- Progress sync and the leaderboard are unaffected: id↔number mapping
+  (`ApiRemoteLevelRepository.getLevelIdsByNumber`) already reads every row
+  from `GET /levels` regardless of this feature, so remote-band levels get
+  the same mapping as 1–30 with no code change.

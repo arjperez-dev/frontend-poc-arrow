@@ -56,7 +56,7 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
   Future<_LevelSelectionData> _loadScreenData() async {
     final loadLevels =
         widget.loadLevels ??
-        LocalLevelDependencies.createGetLocalLevelsUseCase().call;
+        (await LocalLevelDependencies.createGetLocalLevelsUseCase()).call;
     final loadProgress =
         widget.loadProgress ??
         (await LocalProgressDependencies.createGetLocalProgressUseCase()).call;

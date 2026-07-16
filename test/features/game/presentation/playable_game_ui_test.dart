@@ -591,7 +591,7 @@ Future<void> _openLevelOne(WidgetTester tester, List<Level> levels) async {
 Future<List<Level>> _loadRealManualLevels(WidgetTester tester) async {
   late final List<Level> levels;
   await tester.runAsync(() async {
-    levels = await LocalLevelDependencies.createGetLocalLevelsUseCase()();
+    levels = await (await LocalLevelDependencies.createGetLocalLevelsUseCase())();
   });
   return levels;
 }

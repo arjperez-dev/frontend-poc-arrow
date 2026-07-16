@@ -2980,3 +2980,197 @@ source/test/config touched):
   switches to a single column, canvas fits, no horizontal body overflow. A
   pixel-level screenshot pass was again not captured (Browser pane screenshot
   tool timed out); DOM/pixel-sample/layout-rect inspection was used instead.
+
+## Phase 34.1–34.3 — Backend-Driven Dynamic Levels (slices 1-3)
+
+Branch `feat/phase-34-backend-driven-levels`.
+
+### What Changed
+
+- **34.1 (design):** New `backend-poc-arrow/docs/DYNAMIC_LEVELS_CONTRACT.md`
+  documents the contract for backend-served, real, playable levels on top of
+  the existing offline-first local levels (1-30). Node `z !== 0` stays the
+  2D/3D source of truth (unchanged); `definitionJson.metadata.mode: "2d"|"3d"`
+  added as an additive routing hint. Remote-only levels reserve
+  `number >= 1000`. Read contract: frontend fetches `GET /levels`, filters to
+  `number >= 1000` client-side. **No schema migration** — `definitionJson: Json`
+  and `GraphLevelDefinitionValidator` already accept arbitrary shape/open
+  metadata.
+- **34.2 (backend seeding):** `backend-poc-arrow/prisma/levels/remote-levels.ts`
+  seeds two hand-authored levels: `1000` "Remote First Exit" (2D, easy) and
+  `1001` "Remote Vertical Post" (3D, medium). `seedRemoteLevels()` in
+  `prisma/seed.ts` upserts by `number`, wired in right after
+  `seedManualLevels()` — idempotent, never touches 1-30. Added a validator
+  test proving 3D shape + `metadata.mode` already pass unchanged, and a
+  `CreateLevelUseCase` unit test proving `POST /levels` round-trips a 3D
+  remote-band definition byte-identical.
+- **34.3 (frontend fetch abstraction, read-only):** New application port
+  `RemoteLevelDefinitionRepository.fetchRemoteLevels()` and infrastructure
+  implementation `ApiRemoteLevelDefinitionRepository` in
+  `frontend-poc-arrow/lib/features/game/`. Calls `GET /levels`, filters to
+  `number >= 1000`, maps each entry via the existing `ManualLevelDto.fromJson`
+  (reused, not duplicated — already tolerates optional `z`). Best-effort:
+  malformed entries skipped individually; any network/shape failure resolves
+  to an empty list rather than throwing. Does **not** touch
+  `ApiRemoteLevelRepository` (id<->number sync mapping) or any auth/sync/
+  leaderboard code. No merge into the playable level list yet — that is
+  34.4's scope.
+
+### Files Touched
+
+- `backend-poc-arrow/docs/DYNAMIC_LEVELS_CONTRACT.md` (new)
+- `backend-poc-arrow/prisma/levels/remote-levels.ts` (new)
+- `backend-poc-arrow/prisma/seed.ts`
+- `backend-poc-arrow/src/domain/levels/graph-level-definition.spec.ts`
+- `backend-poc-arrow/src/application/levels/create-level.use-case.spec.ts` (new)
+- `frontend-poc-arrow/lib/features/game/application/remote_level_definition_repository.dart` (new)
+- `frontend-poc-arrow/lib/features/game/infrastructure/api_remote_level_definition_repository.dart` (new)
+- `frontend-poc-arrow/test/features/game/infrastructure/api_remote_level_definition_repository_test.dart` (new)
+
+### Verification Results
+
+- Backend: `npm run lint` clean; `npm test` 12/12 passed (5 suites);
+  `prisma/schema.prisma` confirmed untouched (`git diff --stat` empty).
+- Frontend: `flutter analyze` no issues; `flutter test` 267/267 passed
+  (4 new).
+
+### New Tests
+
+- `should_accept_3d_level_definition_with_non_zero_z_and_mode_metadata`
+- `should_round_trip_3d_definition_json_unchanged_when_creating_a_remote_band_level`
+- `should_reject_creation_when_a_level_with_the_same_number_already_exists`
+- `should_map_2d_and_3d_remote_levels_preserving_z_when_response_is_valid`
+- `should_skip_malformed_entry_while_keeping_valid_ones`
+- `should_return_empty_list_when_network_call_fails`
+- `should_return_empty_list_when_response_shape_is_unexpected`
+
+### Limitations
+
+- The phase file's "run the seed against a disposable DB and confirm
+  idempotency" validation step was not performed — no database is available
+  in this environment.
+- No merge of remote levels into the playable level list yet (by design —
+  scoped to 34.4).
+
+### Next Recommended Phase
+
+Phase 34.4 — frontend offline-first merge of local (source of truth) and
+remote (`ApiRemoteLevelDefinitionRepository`) levels, additive only, local
+wins on conflict.
+
+## Phase 34.4 — Frontend Offline-First Merge Strategy
+
+### What Changed
+- Added `MergedLevelRepository implements LevelRepository`: loads local bundled levels first (always authoritative), best-effort calls 34.3's `RemoteLevelDefinitionRepository.fetchRemoteLevels()`, and appends remote levels whose `number` is not already present locally — local always wins on a number conflict.
+- Added `RemoteLevelCache` (infrastructure, `SharedPreferences`-backed): persists the last successfully fetched non-empty remote level list as JSON so it stays playable offline. An empty fetch result (which 34.3's repository uses for both "backend down" and "genuinely zero remote levels") falls back to the cache rather than clearing it, so a transient outage never discards previously downloaded content; a non-empty fetch refreshes the cache.
+- Added `AppConfig.enableRemoteLevels` (`bool.fromEnvironment('ENABLE_REMOTE_LEVELS')`, default `false`) — the merge feature ships dark. `LocalLevelDependencies.createRepository()` now branches on this flag: off returns the original `AssetLevelRepository` unchanged; on returns a `MergedLevelRepository` wrapping it plus `ApiRemoteLevelDefinitionRepository`.
+- `LocalLevelDependencies.createRepository()` / `createGetLocalLevelsUseCase()` / `createGetLocalLevelByNumberUseCase()` became `Future`-returning (needed to construct `SharedPreferences`/`ApiClient` for the merged path). All 4 existing call sites were already inside `async` functions, so this was a mechanical `await`-insertion with no behavior change when the flag is off.
+- Verified mode routing is unaffected: `isThreeDLevel` (`level_mode_filter.dart`) keys off `boardGraph.isMultiLayer` (real node `z` data), not the level number, so merged remote levels (numbered `>= 1000`) still route to 2D/3D correctly.
+
+### Files Touched
+- `frontend-poc-arrow/lib/features/game/infrastructure/merged_level_repository.dart` (new)
+- `frontend-poc-arrow/lib/features/game/infrastructure/remote_level_cache.dart` (new)
+- `frontend-poc-arrow/lib/features/game/infrastructure/local_level_dependencies.dart`
+- `frontend-poc-arrow/lib/core/config/app_config.dart`
+- `frontend-poc-arrow/lib/features/game/presentation/game_screen.dart`
+- `frontend-poc-arrow/lib/features/levels/presentation/level_selection_screen.dart`
+- `frontend-poc-arrow/lib/features/leaderboard/presentation/leaderboard_level_picker_screen.dart`
+- `frontend-poc-arrow/test/features/game/presentation/playable_game_ui_test.dart` (await update only)
+- `frontend-poc-arrow/test/features/game/infrastructure/merged_level_repository_test.dart` (new)
+
+### Verification Results
+- `flutter analyze`: clean.
+- `flutter test`: 272/272 passed (5 new).
+- `git status --short`: diff limited to the files above; `ApiRemoteLevelRepository`, sync, leaderboard, and local level assets untouched.
+
+### New Tests
+- `should_append_remote_levels_with_numbers_not_present_locally`
+- `should_keep_local_level_when_remote_number_conflicts`
+- `should_fall_back_to_local_only_when_remote_fetch_fails_and_no_cache`
+- `should_serve_cached_remote_levels_when_fetch_returns_empty`
+- `should_preserve_2d_3d_routing_for_merged_remote_levels`
+
+### Limitations
+- Feature flag defaults off (`ENABLE_REMOTE_LEVELS` not set) — the merge path is unexercised in production builds until explicitly enabled.
+- 34.3's `RemoteLevelDefinitionRepository` cannot distinguish "network failure" from "legitimately zero remote levels"; both resolve to an empty list, so this slice treats empty as "no new signal" (keep cache) — documented in the improvement log as an interpretation, not a contract guarantee.
+- No live device/offline-airplane-mode manual validation performed in this session (no device available in this environment).
+
+### Next Recommended Phase
+Phase 34.5 — validation & integration testing (end-to-end fallback-when-down, merge correctness, 2D/3D routing, no regression to local play/sync/leaderboard). Requires explicit user go-ahead before starting.
+
+## Phase 34.5 — Validation, Integration & Testing
+
+### What Changed
+
+- Added an end-to-end integration test proving the full backend-driven-levels
+  path: real `AssetLevelRepository` (local 1-30) + real
+  `ApiRemoteLevelDefinitionRepository` mapping + real `MergedLevelRepository`
+  merge/cache logic, with only the HTTP transport faked. Confirms an extra 2D
+  (1000) and 3D (1001) remote level download, merge, and are correctly routed
+  by game mode.
+- Added regression coverage: backend unreachable ⇒ exactly local levels 1-30
+  load unchanged; a prior successful fetch stays playable offline via the
+  cache after the backend goes down.
+- Found and fixed a real bug surfaced by the routing regression test:
+  `isThreeDLevel` (`lib/features/game/presentation/level_mode_filter.dart`)
+  used a local-only fallback (`number > 20 ⇒ 3D`) that misclassified every
+  remote 2D level (number >= 1000, always > 20) as 3D. Fixed by only applying
+  that numeric fallback below the remote-level floor (1000); levels >= 1000
+  now route purely off `boardGraph.isMultiLayer`, matching the 34.1 contract's
+  "graph shape is the source of truth" rule.
+- Attempted to flip `AppConfig.enableRemoteLevels` to default `true` per the
+  phase's "flip only if every automated check passes" instruction. Reverted:
+  several widget tests (`playable_game_ui_test.dart`,
+  `leaderboard_level_picker_screen_test.dart`,
+  `level_selection_screen_game_mode_filter_test.dart`,
+  `level_selection_progression_test.dart`) mount screens without injecting a
+  fake `loadLevels`/`loadLevelByNumber`, so a `true` default makes
+  `LocalLevelDependencies` attempt a real network call inside `flutter test`
+  — 8 test failures. Flag stays **off by default**; documented as the blocker
+  in `AppConfig.enableRemoteLevels`'s doc comment and `docs/LEVEL_AUTHORING.md`
+  §17.
+- Added `docs/LEVEL_AUTHORING.md` §17 "Remote/dynamic levels (Phase 34)"
+  describing how backend-served levels reach players.
+
+### Files Touched
+
+- `lib/features/game/presentation/level_mode_filter.dart` (bug fix)
+- `lib/core/config/app_config.dart` (doc-comment update only; flag unchanged)
+- `docs/LEVEL_AUTHORING.md` (new §17)
+- `test/features/game/infrastructure/merged_level_repository_integration_test.dart` (new)
+
+### Verification Results
+
+- `flutter analyze`: passed, 0 issues
+- `flutter test`: 275 passed (272 pre-existing + 3 new), 0 failed
+- `node tool/gen_levels.js --validate-only`: not applicable — no local level
+  file was touched
+- `git status --short`: confirmed scope — no changes to auth, sync,
+  leaderboard application code, `ApiRemoteLevelRepository`, or local level
+  JSON assets
+
+### New Tests
+
+- `should_download_merge_and_route_an_extra_2d_and_3d_level_end_to_end`
+- `should_load_all_local_levels_unchanged_when_backend_is_unreachable`
+- `should_serve_cached_remote_levels_offline_after_a_prior_successful_fetch`
+
+### Limitations
+
+- `AppConfig.enableRemoteLevels` remains off by default — flipping it needs
+  either injecting fakes into the widget tests listed above, or threading the
+  flag into `LocalLevelDependencies` so tests can force it off independent of
+  the build-time default.
+- No live device / real-backend manual validation was performed (no backend
+  instance available in this environment) — the phase's optional "manual
+  harness check" step (download+play a remote level, then toggle backend off)
+  is not exercised here, consistent with earlier sub-phases' limitations.
+- 34.3's `RemoteLevelDefinitionRepository.fetchRemoteLevels()` still can't
+  distinguish "network failure" from "legitimately zero remote levels"; 34.4's
+  cache-fallback policy already covers both cases identically by design.
+
+### Next Recommended Phase
+
+None required by the Phase 34 plan — 34.1-34.5 are complete; the only
+carried-forward follow-up is enabling `AppConfig.enableRemoteLevels` by
+default once the widget-test fake-injection gap above is closed.
