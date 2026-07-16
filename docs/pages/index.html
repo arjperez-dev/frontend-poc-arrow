@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nodus — Graph-Based Puzzle Game</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="hero" id="top">
+  <div class="hero-inner">
+    <p class="eyebrow" data-i18n="hero.eyebrow">Software Development Project</p>
+    <h1>Nodus</h1>
+    <p class="tagline" data-i18n="hero.tagline">A graph-based puzzle game where every arrow is rigid, every exit is deliberate.</p>
+    <nav class="hero-nav" aria-label="Section navigation">
+      <a href="#overview" data-i18n="nav.overview">Overview</a>
+      <a href="#workflow" data-i18n="nav.workflow">AI Workflow</a>
+      <a href="#highlights" data-i18n="nav.highlights">Technical Highlights</a>
+      <a href="#closing" data-i18n="nav.closing">Closing</a>
+      <button id="langToggle" class="lang-toggle" type="button"
+        data-i18n-aria="lang.aria" aria-label="Switch language to Spanish">
+        <span class="lang-toggle-icon" aria-hidden="true">🌐</span>
+        <span id="langToggleLabel">ES</span>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- 1. Project Overview -->
+  <section id="overview" class="section">
+    <div class="section-inner">
+      <h2><span class="section-number">01</span> <span data-i18n="s1.title">Project Overview</span></h2>
+      <p class="lead" data-i18n="s1.lead">
+        Nodus is a graph-based puzzle game. Each level is a graph
+        of nodes and edges covered by rigid arrows. Tapping an arrow attempts a single, atomic full exit
+        in its head direction — the arrow either escapes the board entirely, or the move is rolled back
+        exactly as it was. There is no partial movement, which turns every level into a question of
+        <em>order</em>: which arrow can leave now so that the others eventually can too.
+      </p>
+      <div class="overview-grid">
+        <div class="overview-card">
+          <h3 data-i18n="o1.h">Graph-Based Mechanics</h3>
+          <p data-i18n="o1.p">The board is never a grid of tiles. It is a true graph: nodes joined by
+          edges, with rigid multi-node arrows laid over them. Movement is resolved as a coordinate sweep
+          from each arrow's head — if the path is clear the whole arrow slides off; if it is blocked, the
+          attempt is undone atomically. This graph model is what makes both flat and layered boards
+          possible with one set of rules.</p>
+        </div>
+        <div class="overview-card">
+          <h3 data-i18n="o2.h">2D &amp; 3D Modes</h3>
+          <p data-i18n="o2.p">The game ships two full modes: flat 2D boards and multi-layer 3D boards
+          rendered through a rotatable perspective camera you can orbit and zoom. Both share the same
+          underlying resolver — the extra dimension is handled by a direction abstraction, not by
+          special-cased physics, so a 3D level is just a graph whose arrows can also travel between
+          stacked layers.</p>
+        </div>
+        <div class="overview-card">
+          <h3 data-i18n="o3.h">Challenge System</h3>
+          <p data-i18n="o3.p">On top of the campaign, three challenge types re-use existing levels with
+          new pressure: Time Attack (a calculated clock), Move Limit (a bounded budget of taps), and
+          Perfect Run (a single mistake fails the attempt). Challenge results live in their own storage
+          and never touch campaign completion, progress sync, or the leaderboard — the two systems are
+          deliberately kept separate.</p>
+        </div>
+        <div class="overview-card">
+          <h3 data-i18n="o4.h">Progressive Difficulty</h3>
+          <p data-i18n="o4.p">30 levels in total: 15 random-generated rectangular boards, 5 fixed figure
+          silhouettes (heart, diamond, club, spade, crown), and 10 multi-layer 3D figures (pyramid,
+          diamond, hourglass, cross, starburst, cat, helix, and more). Difficulty is <em>computed</em>
+          from each level's structure — arrow count, how many start blocked, bends, density and layers —
+          not just read from a static label, and the level list is ordered by that computed score.</p>
+        </div>
+        <div class="overview-card">
+          <h3 data-i18n="o5.h">Audio System</h3>
+          <p data-i18n="o5.p">Sound is driven through an app-lifetime audio manager that keeps a single
+          set of players alive across screens rather than rebuilding them per level. Background music and
+          a pool of sound effects negotiate focus so they duck instead of silencing each other, pause when
+          the app goes to the background, and resume when it returns — a design shaped directly by
+          real-device testing.</p>
+        </div>
+        <div class="overview-card">
+          <h3 data-i18n="o6.h">Progress &amp; Leaderboards</h3>
+          <p data-i18n="o6.p">Progress is local-first: unlocks and best scores are stored on the device
+          so the game is fully playable offline. An optional account adds cloud sync with a merge policy
+          that never discards better local results, plus per-level leaderboards when signed in. The online
+          layer is purely additive — nothing about core play depends on a network connection.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. AI Workflow Evolution -->
+  <section id="workflow" class="section section-alt">
+    <div class="section-inner">
+      <h2><span class="section-number">02</span> <span data-i18n="s2.title">AI Workflow Evolution</span></h2>
+      <p class="lead" data-i18n="s2.lead">
+        Nodus was built with an AI coding assistant, and the way the team worked <em>with</em> that
+        assistant changed as much as the game did. Every request to the model fills a fixed-size
+        <strong>context window</strong> — the text the model reads before it answers. The story below is
+        about steadily spending less of that window on re-explaining the project, and more of it on
+        producing correct work. It moved through three stages.
+      </p>
+
+      <div class="workflow-stages">
+        <div class="stage-card">
+          <span class="stage-index" aria-hidden="true">1</span>
+          <p class="stage-tag" data-i18n="stage1.tag">Stage 1</p>
+          <h3 data-i18n="stage1.h">Prompt Engineering</h3>
+          <p data-i18n="stage1.p">The earliest phases relied on carefully worded one-off prompts. Each
+          session re-explained the architecture, the constraints, and the history from scratch, all inside
+          the prompt itself.</p>
+          <p class="stage-problem"><span class="stage-problem-label" data-i18n="problem.label">The problem</span>
+            <span data-i18n="stage1.problem">Context had to be rebuilt in full every time. The prompt grew
+            unwieldy, facts drifted between sessions, and a large share of the window was spent restating
+            things the project already knew before any real work could begin.</span>
+          </p>
+        </div>
+        <div class="stage-card">
+          <span class="stage-index" aria-hidden="true">2</span>
+          <p class="stage-tag" data-i18n="stage2.tag">Stage 2</p>
+          <h3 data-i18n="stage2.h">Spec-Driven Development</h3>
+          <p data-i18n="stage2.p">To fight that drift, work moved to written specifications: structured
+          phase documents that stated exactly what to build, which files were in scope, and which rules
+          applied. The model was pointed at a spec instead of an ad-hoc paragraph.</p>
+          <p class="stage-problem"><span class="stage-problem-label" data-i18n="problem.label">The problem</span>
+            <span data-i18n="stage2.problem">Specs cut ambiguity and repeated back-and-forth, but each
+            phase still carried its own bespoke document that duplicated the same baseline facts. The
+            shared knowledge lived nowhere permanent, so every new spec re-imported it by hand.</span>
+          </p>
+        </div>
+        <div class="stage-card is-final">
+          <span class="stage-index" aria-hidden="true">3</span>
+          <p class="stage-tag" data-i18n="stage3.tag">Stage 3 · current</p>
+          <h3 data-i18n="stage3.h">Harness Engineering</h3>
+          <p data-i18n="stage3.p">The project now keeps a standing <code>harness/</code> directory:
+          baseline facts, active constraints, pre- and post-implementation checklists, a phase-prompt
+          template, and a running improvement log. A new phase references this shared, persistent state
+          instead of restating it — only the <em>delta</em> for that phase enters the window.</p>
+          <p class="stage-problem is-win"><span class="stage-problem-label" data-i18n="win.label">Why it stuck</span>
+            <span data-i18n="stage3.win">The baseline is written once and reused everywhere. Each session
+            starts by reading the harness, so facts stay consistent, mistakes are logged and not repeated,
+            and the context window is freed up for actual implementation and review. This is the workflow
+            the project runs on today.</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Visual A: anatomy of the context window -->
+      <div class="visual-block">
+        <h3 data-i18n="cw.title">Anatomy of a Context Window</h3>
+        <p class="visual-caption" data-i18n="cw.desc">Every request the model answers is built from a
+        limited budget of tokens. That budget splits into <strong>input</strong> (everything the model
+        must read first) and <strong>output</strong> (what it actually produces). The more input is spent
+        re-establishing context, the less room remains for useful work.</p>
+
+        <div class="cw-diagram" role="img" data-i18n-aria="cw.aria"
+          aria-label="Diagram of a context window divided into input tokens and output tokens.">
+          <div class="cw-side cw-input">
+            <div class="cw-side-header">
+              <span class="cw-dot"></span><span data-i18n="cw.input_header">Input tokens</span>
+            </div>
+            <p class="cw-side-sub" data-i18n="cw.input_sub">What the model reads before answering</p>
+            <ul class="cw-blocks">
+              <li data-i18n="cw.sys">System instructions</li>
+              <li data-i18n="cw.ctx">Project context &amp; constraints</li>
+              <li data-i18n="cw.spec">Phase specification</li>
+            </ul>
+          </div>
+          <div class="cw-arrow" aria-hidden="true">→</div>
+          <div class="cw-side cw-output">
+            <div class="cw-side-header">
+              <span class="cw-dot cw-dot-out"></span><span data-i18n="cw.output_header">Output tokens</span>
+            </div>
+            <p class="cw-side-sub" data-i18n="cw.output_sub">What the model generates in response</p>
+            <ul class="cw-blocks">
+              <li data-i18n="cw.code">Generated code</li>
+              <li data-i18n="cw.audit">Audit reports &amp; tests</li>
+            </ul>
+          </div>
+        </div>
+        <p class="visual-footnote" data-i18n="cw.note">The window is finite: input and output compete for
+        the same space. Reducing repeated input is what leaves more room for output.</p>
+      </div>
+
+      <!-- Visual B: efficiency gain across the three techniques -->
+      <div class="visual-block">
+        <h3><span data-i18n="chart.title">Efficiency Across the Three Techniques</span>
+          <span class="illustrative-tag" data-i18n="chart.illustrative">illustrative</span></h3>
+        <p class="visual-caption" data-i18n="chart.caption">Reading left to right, each technique spends a
+        smaller share of the window on repeated setup (blue) and a larger share on real output (mint). The
+        dashed line traces the shrinking setup overhead. These proportions are illustrative — they show the
+        shape of the improvement, not measured token counts.</p>
+        <canvas id="workflowCanvas" width="900" height="400" role="img"
+          data-i18n-aria="chart.aria"
+          aria-label="Illustrative chart showing input versus output token composition across the three AI workflow stages, with a downward trend in repeated setup overhead from prompt engineering to harness engineering.">
+        </canvas>
+        <div class="legend">
+          <span class="legend-item"><i class="swatch swatch-input"></i> <span data-i18n="legend.input">Input tokens — repeated setup / context</span></span>
+          <span class="legend-item"><i class="swatch swatch-output"></i> <span data-i18n="legend.output">Output tokens — actual work</span></span>
+          <span class="legend-item"><i class="swatch swatch-line"></i> <span data-i18n="legend.line">Setup overhead (falling)</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Technical Highlights -->
+  <section id="highlights" class="section">
+    <div class="section-inner">
+      <h2><span class="section-number">03</span> <span data-i18n="s3.title">Technical Highlights</span></h2>
+      <p class="lead" data-i18n="s3.lead">Each choice below was made for a concrete reason — not just what
+      the stack is, but why it earns its place and what it buys the project.</p>
+      <div class="cards-grid">
+        <div class="tech-card">
+          <h3 data-i18n="t1.h">AWS EC2 Hosting</h3>
+          <p data-i18n="t1.p">The backend runs on an Amazon EC2 instance, giving the team a real,
+          always-on server with full control over the runtime and network — closer to a production
+          deployment than a managed sandbox, and a chance to practise operating cloud infrastructure
+          directly.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="t2.h">Docker-Based Deployment</h3>
+          <p data-i18n="t2.p">The backend ships with a <code>Dockerfile</code> and
+          <code>docker-compose.yml</code>, so the API and its database start with a single command. The
+          same image runs on a laptop and on EC2, which removes "works on my machine" drift between
+          development and the server.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="t3.h">Local / Cloud Flexibility</h3>
+          <p data-i18n="t3.p">The app is fully playable offline against local level data; the backend is
+          strictly additive. Auth, cloud sync, and leaderboards enhance the experience when present but
+          are never required for it — a deliberate design so a network outage never blocks play.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="t4.h">Flutter + Clean Architecture</h3>
+          <p data-i18n="t4.p">One Flutter codebase targets multiple platforms, organised as Domain →
+          Application → Infrastructure → Presentation per feature. Keeping the domain pure (no Flutter,
+          HTTP, or storage imports) means the game rules can be unit-tested in isolation and reused
+          unchanged across 2D and 3D.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="t5.h">Node.js + NestJS + Prisma</h3>
+          <p data-i18n="t5.p">The server is a NestJS API on Node.js — its modular, dependency-injected
+          structure mirrors the frontend's layered design — with Prisma as a type-safe ORM and migration
+          layer. Together they give a strongly-typed path from HTTP request to database and back.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="t6.h">Graph-Based Game Engine</h3>
+          <p data-i18n="t6.p">No matrix, grid-cell, or tile runtime model exists anywhere. Levels are
+          graphs of nodes and edges, and movement is a coordinate-based sweep resolved entirely in the
+          domain layer. This single abstraction is what lets the same engine drive flat boards, figure
+          silhouettes, and stacked 3D levels.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="t7.h">30 Levels, Tool-Validated</h3>
+          <p data-i18n="t7.p">15 random rectangular boards, 5 figure silhouettes, and 10 multi-layer 3D
+          figures. A Node generator/validator checks every level for solvability, connectivity, and shape
+          rules before it ships, so no unsolvable or malformed board can reach a player.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="t8.h">Challenge Modes</h3>
+          <p data-i18n="t8.p">Time Attack, Move Limit, and Perfect Run layer over campaign levels through
+          a strategy pattern for scoring, with fully separate save state. Adding a new challenge type means
+          adding one strategy — the core game loop stays untouched.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Closing -->
+  <section id="closing" class="section section-alt closing-section">
+    <div class="section-inner">
+      <h2><span class="section-number">04</span> <span data-i18n="s4.title">Closing</span></h2>
+      <p class="lead" data-i18n="s4.lead">
+        Nodus began as a small graph-based puzzle prototype and grew into a full 2D and 3D game with an
+        optional online backend — built alongside a development workflow that matured right beside it, from
+        prompt engineering, to specs, to a proper harness. The result is a project where the game and the
+        way it was made both reflect the same idea: write the rules down once, keep them clean, and reuse
+        them everywhere. Thank you <strong>Professor Carlos Alonso</strong> for the guidance throughout
+        this semester.
+      </p>
+
+      <div class="links-grid">
+        <a class="link-card" href="https://github.com/arjperez-dev/backend-poc-arrow.git" target="_blank" rel="noopener noreferrer">
+          <span class="link-label" data-i18n="link.backend">Backend Repository</span>
+          <span class="link-url">github.com/arjperez-dev/backend-poc-arrow</span>
+        </a>
+        <a class="link-card" href="https://github.com/arjperez-dev/frontend-poc-arrow.git" target="_blank" rel="noopener noreferrer">
+          <span class="link-label" data-i18n="link.frontend">Frontend Repository</span>
+          <span class="link-url">github.com/arjperez-dev/frontend-poc-arrow</span>
+        </a>
+        <a class="link-card" href="https://lucid.app/lucidchart/5c09fbb7-74be-4dc2-89c5-af638b2b2b71/edit?viewport_loc=-2132%2C-1969%2C10447%2C4578%2CZ0MbVBNDveSs&invitationId=inv_7c5f886f-d720-4be1-86f9-55d565e84361" target="_blank" rel="noopener noreferrer">
+          <span class="link-label" data-i18n="link.lucid">Lucidchart Diagram</span>
+          <span class="link-url">lucid.app/lucidchart/…</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <p data-i18n="footer.text">Nodus — University Capstone Project</p>
+  <a href="#top" data-i18n="footer.top">Back to top ↑</a>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

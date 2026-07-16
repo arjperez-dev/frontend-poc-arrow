@@ -299,22 +299,33 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  void _backToLevels() {
-    Navigator.of(context).pushNamedAndRemoveUntil(
+  Future<void> _backToLevels() async {
+    final navigator = Navigator.of(context);
+    final challenge = widget.challenge;
+    await _controller?.completionSettled;
+    if (!mounted) {
+      return;
+    }
+    navigator.pushNamedAndRemoveUntil(
       AppRoutes.levels,
       (route) => route.settings.name == AppRoutes.home,
-      arguments: widget.challenge,
+      arguments: challenge,
     );
   }
 
-  void _openNextLevel() {
+  Future<void> _openNextLevel() async {
+    final navigator = Navigator.of(context);
     final currentNumber = _controller?.level?.number ?? 0;
     // Progression order (easiest → hardest), falling back to internal-number
     // order when the progression isn't available.
     final nextLevelNumber =
         _progression?.nextInternalAfter(currentNumber) ?? (currentNumber + 1);
     final challenge = widget.challenge;
-    Navigator.of(context).pushReplacementNamed(
+    await _controller?.completionSettled;
+    if (!mounted) {
+      return;
+    }
+    navigator.pushReplacementNamed(
       AppRoutes.game,
       arguments: challenge == null
           ? nextLevelNumber
