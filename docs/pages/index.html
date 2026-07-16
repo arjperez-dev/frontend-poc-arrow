@@ -17,6 +17,7 @@
       <a href="#overview" data-i18n="nav.overview">Overview</a>
       <a href="#workflow" data-i18n="nav.workflow">AI Workflow</a>
       <a href="#highlights" data-i18n="nav.highlights">Technical Highlights</a>
+      <a href="#implementation" data-i18n="nav.implementation">Implementation</a>
       <a href="#closing" data-i18n="nav.closing">Closing</a>
       <button id="langToggle" class="lang-toggle" type="button"
         data-i18n-aria="lang.aria" aria-label="Switch language to Spanish">
@@ -112,7 +113,12 @@
           <p data-i18n="stage1.p">The earliest phases relied on carefully worded one-off prompts. Each
           session re-explained the architecture, the constraints, and the history from scratch, all inside
           the prompt itself.</p>
-          <p class="stage-problem"><span class="stage-problem-label" data-i18n="problem.label">The problem</span>
+          <p class="stage-cost"><span class="stage-cost-label" data-i18n="cost.label">What it cost</span>
+            <span data-i18n="stage1.cost">Every session paid the same setup cost again: a large share of
+            each request's input tokens went to re-establishing context that produced no new code, leaving
+            less of the window for the actual task.</span>
+          </p>
+          <p class="stage-problem"><span class="stage-problem-label" data-i18n="problem.label">Why the project moved on</span>
             <span data-i18n="stage1.problem">Context had to be rebuilt in full every time. The prompt grew
             unwieldy, facts drifted between sessions, and a large share of the window was spent restating
             things the project already knew before any real work could begin.</span>
@@ -125,7 +131,12 @@
           <p data-i18n="stage2.p">To fight that drift, work moved to written specifications: structured
           phase documents that stated exactly what to build, which files were in scope, and which rules
           applied. The model was pointed at a spec instead of an ad-hoc paragraph.</p>
-          <p class="stage-problem"><span class="stage-problem-label" data-i18n="problem.label">The problem</span>
+          <p class="stage-cost"><span class="stage-cost-label" data-i18n="cost.label">What it cost</span>
+            <span data-i18n="stage2.cost">Ambiguity and rework dropped, but every phase document still
+            duplicated the same baseline facts by hand, so per-phase prompt size stayed large even though
+            the back-and-forth did not.</span>
+          </p>
+          <p class="stage-problem"><span class="stage-problem-label" data-i18n="problem.label">Why the project moved on</span>
             <span data-i18n="stage2.problem">Specs cut ambiguity and repeated back-and-forth, but each
             phase still carried its own bespoke document that duplicated the same baseline facts. The
             shared knowledge lived nowhere permanent, so every new spec re-imported it by hand.</span>
@@ -139,6 +150,11 @@
           baseline facts, active constraints, pre- and post-implementation checklists, a phase-prompt
           template, and a running improvement log. A new phase references this shared, persistent state
           instead of restating it — only the <em>delta</em> for that phase enters the window.</p>
+          <p class="stage-cost"><span class="stage-cost-label" data-i18n="cost.label">What it cost</span>
+            <span data-i18n="stage3.cost">The harness itself has to be kept up to date — a constraint or a
+            decision that changes must be edited once in the harness, or future phases will read a stale
+            fact. That upkeep is paid once per change, not once per phase.</span>
+          </p>
           <p class="stage-problem is-win"><span class="stage-problem-label" data-i18n="win.label">Why it stuck</span>
             <span data-i18n="stage3.win">The baseline is written once and reused everywhere. Each session
             starts by reading the harness, so facts stay consistent, mistakes are logged and not repeated,
@@ -150,23 +166,50 @@
 
       <!-- Visual A: anatomy of the context window -->
       <div class="visual-block">
-        <h3 data-i18n="cw.title">Anatomy of a Context Window</h3>
+        <h3><span data-i18n="cw.title">Anatomy of a Context Window</span>
+          <span class="illustrative-tag" data-i18n="chart.illustrative">illustrative</span></h3>
         <p class="visual-caption" data-i18n="cw.desc">Every request the model answers is built from a
         limited budget of tokens. That budget splits into <strong>input</strong> (everything the model
-        must read first) and <strong>output</strong> (what it actually produces). The more input is spent
-        re-establishing context, the less room remains for useful work.</p>
+        must read first) and <strong>output</strong> (what it actually produces). The proportions below are
+        illustrative, not measured — they show which parts are fixed cost, which parts the harness was
+        built to shrink, and which parts are the actual payoff.</p>
 
         <div class="cw-diagram" role="img" data-i18n-aria="cw.aria"
-          aria-label="Diagram of a context window divided into input tokens and output tokens.">
+          aria-label="Diagram of a context window divided into input tokens and output tokens, each split into proportional parts with an explanation of why each part costs what it does.">
           <div class="cw-side cw-input">
             <div class="cw-side-header">
               <span class="cw-dot"></span><span data-i18n="cw.input_header">Input tokens</span>
             </div>
             <p class="cw-side-sub" data-i18n="cw.input_sub">What the model reads before answering</p>
             <ul class="cw-blocks">
-              <li data-i18n="cw.sys">System instructions</li>
-              <li data-i18n="cw.ctx">Project context &amp; constraints</li>
-              <li data-i18n="cw.spec">Phase specification</li>
+              <li class="cw-block">
+                <div class="cw-block-head">
+                  <span data-i18n="cw.sys">System instructions</span>
+                  <span class="cw-block-pct">~15%</span>
+                </div>
+                <div class="cw-bar-track"><div class="cw-bar-fill" style="width: 15%;"></div></div>
+                <p class="cw-block-why" data-i18n="cw.sys.why">Fixed cost on every request — the same rules
+                apply regardless of task, so this share can't shrink further.</p>
+              </li>
+              <li class="cw-block">
+                <div class="cw-block-head">
+                  <span data-i18n="cw.ctx">Project context &amp; constraints</span>
+                  <span class="cw-block-pct">~45%</span>
+                </div>
+                <div class="cw-bar-track"><div class="cw-bar-fill" style="width: 45%;"></div></div>
+                <p class="cw-block-why" data-i18n="cw.ctx.why">Grows every time facts must be restated —
+                exactly the share the standing <code>harness/</code> directory exists to shrink.</p>
+              </li>
+              <li class="cw-block">
+                <div class="cw-block-head">
+                  <span data-i18n="cw.spec">Phase specification</span>
+                  <span class="cw-block-pct">~40%</span>
+                </div>
+                <div class="cw-bar-track"><div class="cw-bar-fill" style="width: 40%;"></div></div>
+                <p class="cw-block-why" data-i18n="cw.spec.why">The actual task-specific ask — the only
+                input block that should scale with the size of the work, not with how many sessions came
+                before it.</p>
+              </li>
             </ul>
           </div>
           <div class="cw-arrow" aria-hidden="true">→</div>
@@ -176,8 +219,24 @@
             </div>
             <p class="cw-side-sub" data-i18n="cw.output_sub">What the model generates in response</p>
             <ul class="cw-blocks">
-              <li data-i18n="cw.code">Generated code</li>
-              <li data-i18n="cw.audit">Audit reports &amp; tests</li>
+              <li class="cw-block">
+                <div class="cw-block-head">
+                  <span data-i18n="cw.code">Generated code</span>
+                  <span class="cw-block-pct">~70%</span>
+                </div>
+                <div class="cw-bar-track cw-bar-track-out"><div class="cw-bar-fill cw-bar-fill-out" style="width: 70%;"></div></div>
+                <p class="cw-block-why" data-i18n="cw.code.why">The direct deliverable — the reason the
+                request was made in the first place.</p>
+              </li>
+              <li class="cw-block">
+                <div class="cw-block-head">
+                  <span data-i18n="cw.audit">Audit reports &amp; tests</span>
+                  <span class="cw-block-pct">~30%</span>
+                </div>
+                <div class="cw-bar-track cw-bar-track-out"><div class="cw-bar-fill cw-bar-fill-out" style="width: 30%;"></div></div>
+                <p class="cw-block-why" data-i18n="cw.audit.why">Verification evidence that the code is
+                correct — the harness's post-implementation checklist requires it every phase.</p>
+              </li>
             </ul>
           </div>
         </div>
@@ -185,22 +244,22 @@
         the same space. Reducing repeated input is what leaves more room for output.</p>
       </div>
 
-      <!-- Visual B: efficiency gain across the three techniques -->
+      <!-- Visual B: the three techniques compared on three axes (separate from the diagram above) -->
       <div class="visual-block">
-        <h3><span data-i18n="chart.title">Efficiency Across the Three Techniques</span>
+        <h3><span data-i18n="chart.title">Comparing the Three Techniques</span>
           <span class="illustrative-tag" data-i18n="chart.illustrative">illustrative</span></h3>
-        <p class="visual-caption" data-i18n="chart.caption">Reading left to right, each technique spends a
-        smaller share of the window on repeated setup (blue) and a larger share on real output (mint). The
-        dashed line traces the shrinking setup overhead. These proportions are illustrative — they show the
-        shape of the improvement, not measured token counts.</p>
-        <canvas id="workflowCanvas" width="900" height="400" role="img"
+        <p class="visual-caption" data-i18n="chart.caption">Each technique scored on three axes: how much of
+        the context window it consumes on repeated setup, how many tokens it costs per phase, and the
+        quality of the results it produced. These scores are illustrative — they show the shape of the
+        improvement across stages, not measured token counts.</p>
+        <canvas id="workflowCanvas" width="900" height="420" role="img"
           data-i18n-aria="chart.aria"
-          aria-label="Illustrative chart showing input versus output token composition across the three AI workflow stages, with a downward trend in repeated setup overhead from prompt engineering to harness engineering.">
+          aria-label="Illustrative grouped bar chart comparing prompt engineering, spec-driven development, and harness engineering across three axes: context-window impact, token usage, and quality of results.">
         </canvas>
         <div class="legend">
-          <span class="legend-item"><i class="swatch swatch-input"></i> <span data-i18n="legend.input">Input tokens — repeated setup / context</span></span>
-          <span class="legend-item"><i class="swatch swatch-output"></i> <span data-i18n="legend.output">Output tokens — actual work</span></span>
-          <span class="legend-item"><i class="swatch swatch-line"></i> <span data-i18n="legend.line">Setup overhead (falling)</span></span>
+          <span class="legend-item"><i class="swatch swatch-context"></i> <span data-i18n="legend.context">Context-window impact</span></span>
+          <span class="legend-item"><i class="swatch swatch-tokens"></i> <span data-i18n="legend.tokens">Token usage per phase</span></span>
+          <span class="legend-item"><i class="swatch swatch-quality"></i> <span data-i18n="legend.quality">Quality of results</span></span>
         </div>
       </div>
     </div>
@@ -265,21 +324,88 @@
           a strategy pattern for scoring, with fully separate save state. Adding a new challenge type means
           adding one strategy — the core game loop stays untouched.</p>
         </div>
+        <div class="tech-card">
+          <h3 data-i18n="t9.h">Backend-Driven Dynamic Levels</h3>
+          <p data-i18n="t9.p">On top of the 30 bundled levels, the client can fetch additional real,
+          playable levels straight from the backend (reserved level numbers 1000+) and merge them into the
+          level list at runtime — new content ships by seeding the database, with no app rebuild. The merge
+          stays offline-first: the 30 local levels are always authoritative, a number conflict always keeps
+          the local level, and a failed or absent backend falls back to the last successfully cached remote
+          batch rather than losing previously downloaded content.</p>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- 4. Closing -->
-  <section id="closing" class="section section-alt closing-section">
+  <!-- 4. Technical Implementation -->
+  <section id="implementation" class="section section-alt">
     <div class="section-inner">
-      <h2><span class="section-number">04</span> <span data-i18n="s4.title">Closing</span></h2>
+      <h2><span class="section-number">04</span> <span data-i18n="s_impl.title">Technical Implementation</span></h2>
+      <p class="lead" data-i18n="s_impl.lead">How Nodus is actually put together: what each side of the
+      stack is responsible for, how they relate, which architecture backs each repository, and the
+      cross-cutting concerns applied to the backend.</p>
+      <div class="cards-grid">
+        <div class="tech-card">
+          <h3 data-i18n="impl1.h">Frontend Responsibility</h3>
+          <p data-i18n="impl1.p">The Flutter client owns all gameplay: the graph domain, movement
+          resolution, rendering, audio, and local persistence. Each feature is organised
+          Domain → Application → Infrastructure → Presentation, and the domain layer stays pure Dart — no
+          Flutter, HTTP, or storage imports — so the rules that decide whether an arrow escapes or collides
+          can be unit-tested with no UI and no network involved.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="impl2.h">Backend Responsibility</h3>
+          <p data-i18n="impl2.p">The NestJS API owns accounts, the level catalog, progress persistence and
+          sync, and leaderboards — organised as
+          <code>src/{domain, application, infrastructure, interfaces}</code>, with Prisma as the ORM and
+          migration layer and Swagger docs served at <code>/api/docs</code>. It never runs gameplay logic;
+          that responsibility stays entirely on the client.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="impl3.h">How Frontend and Backend Relate</h3>
+          <p data-i18n="impl3.p">The relationship is strictly additive. Local levels remain the offline
+          source of truth; the client maps them to backend level ids through <code>GET /levels</code>.
+          Progress sync applies a merge policy that never discards a better local result. Leaderboard
+          submission happens only when the player is authenticated, and is best-effort and non-blocking —
+          a failed or absent backend never blocks local play. The same <code>GET /levels</code> call also
+          lets the client download extra, real, playable levels the backend has seeded (reserved numbers
+          1000+) and merge them in at runtime, offline-first and local-wins, so new content can ship without
+          an app rebuild.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="impl4.h">Architecture Impact</h3>
+          <p data-i18n="impl4.p">Both repositories use Clean/hexagonal architecture. Isolating business
+          rules from frameworks means they can be unit-tested without booting a UI or a database, adapters
+          (a Prisma repository, an HTTP client, SharedPreferences) can be swapped behind a port without
+          touching a single use case, and a failure in one adapter — a dropped connection, a slow disk —
+          can't leak into the rules that decide correctness.</p>
+        </div>
+        <div class="tech-card">
+          <h3 data-i18n="impl5.h">AOP — Three Cross-Cutting Concerns</h3>
+          <p data-i18n="impl5.p">The backend separates cross-cutting concerns from business logic using
+          NestJS interceptors, filters, and guards. Two are applied <strong>globally</strong>: a logging
+          &amp; performance interceptor wraps every HTTP handler, recording method/path/status/time with
+          zero controller changes; a global exception filter normalises any thrown error into one
+          consistent JSON response shape. Security is the third concern, and it is applied
+          <strong>per-route</strong>, not globally: a JWT guard validates the bearer token on protected
+          routes (progress, leaderboard submission, admin endpoints), and a roles guard plus a
+          <code>@Roles(ADMIN)</code> decorator additionally restrict the two admin-only level endpoints.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Closing -->
+  <section id="closing" class="section closing-section">
+    <div class="section-inner">
+      <h2><span class="section-number">05</span> <span data-i18n="s4.title">Closing</span></h2>
       <p class="lead" data-i18n="s4.lead">
         Nodus began as a small graph-based puzzle prototype and grew into a full 2D and 3D game with an
         optional online backend — built alongside a development workflow that matured right beside it, from
         prompt engineering, to specs, to a proper harness. The result is a project where the game and the
         way it was made both reflect the same idea: write the rules down once, keep them clean, and reuse
         them everywhere. Thank you <strong>Professor Carlos Alonso</strong> for the guidance throughout
-        this semester.
+        the course.
       </p>
 
       <div class="links-grid">
@@ -302,7 +428,7 @@
 </main>
 
 <footer class="site-footer">
-  <p data-i18n="footer.text">Nodus — University Capstone Project</p>
+  <p data-i18n="footer.text">Nodus — Software Development Course Project</p>
   <a href="#top" data-i18n="footer.top">Back to top ↑</a>
 </footer>
 

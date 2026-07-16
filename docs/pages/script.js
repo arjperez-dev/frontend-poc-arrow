@@ -12,11 +12,12 @@
       "nav.overview": "Overview",
       "nav.workflow": "AI Workflow",
       "nav.highlights": "Technical Highlights",
+      "nav.implementation": "Implementation",
       "nav.closing": "Closing",
       "lang.aria": "Switch language to Spanish",
 
       "s1.title": "Project Overview",
-      "s1.lead": "Nodus is a graph-based puzzle game built. Each level is a graph of nodes and edges covered by rigid arrows. Tapping an arrow attempts a single, atomic full exit in its head direction — the arrow either escapes the board entirely, or the move is rolled back exactly as it was. There is no partial movement, which turns every level into a question of <em>order</em>: which arrow can leave now so that the others eventually can too.",
+      "s1.lead": "Nodus is a graph-based puzzle game. Each level is a graph of nodes and edges covered by rigid arrows. Tapping an arrow attempts a single, atomic full exit in its head direction — the arrow either escapes the board entirely, or the move is rolled back exactly as it was. There is no partial movement, which turns every level into a question of <em>order</em>: which arrow can leave now so that the others eventually can too.",
       "o1.h": "Graph-Based Mechanics",
       "o1.p": "The board is never a grid of tiles. It is a true graph: nodes joined by edges, with rigid multi-node arrows laid over them. Movement is resolved as a coordinate sweep from each arrow's head — if the path is clear the whole arrow slides off; if it is blocked, the attempt is undone atomically. This graph model is what makes both flat and layered boards possible with one set of rules.",
       "o2.h": "2D &amp; 3D Modes",
@@ -32,19 +33,23 @@
 
       "s2.title": "AI Workflow Evolution",
       "s2.lead": "Nodus was built with an AI coding assistant, and the way the team worked <em>with</em> that assistant changed as much as the game did. Every request to the model fills a fixed-size <strong>context window</strong> — the text the model reads before it answers. The story below is about steadily spending less of that window on re-explaining the project, and more of it on producing correct work. It moved through three stages.",
-      "problem.label": "The problem",
+      "problem.label": "Why the project moved on",
+      "cost.label": "What it cost",
       "win.label": "Why it stuck",
       "stage1.tag": "Stage 1",
       "stage1.h": "Prompt Engineering",
       "stage1.p": "The earliest phases relied on carefully worded one-off prompts. Each session re-explained the architecture, the constraints, and the history from scratch, all inside the prompt itself.",
+      "stage1.cost": "Every session paid the same setup cost again: a large share of each request's input tokens went to re-establishing context that produced no new code, leaving less of the window for the actual task.",
       "stage1.problem": "Context had to be rebuilt in full every time. The prompt grew unwieldy, facts drifted between sessions, and a large share of the window was spent restating things the project already knew before any real work could begin.",
       "stage2.tag": "Stage 2",
       "stage2.h": "Spec-Driven Development",
       "stage2.p": "To fight that drift, work moved to written specifications: structured phase documents that stated exactly what to build, which files were in scope, and which rules applied. The model was pointed at a spec instead of an ad-hoc paragraph.",
+      "stage2.cost": "Ambiguity and rework dropped, but every phase document still duplicated the same baseline facts by hand, so per-phase prompt size stayed large even though the back-and-forth did not.",
       "stage2.problem": "Specs cut ambiguity and repeated back-and-forth, but each phase still carried its own bespoke document that duplicated the same baseline facts. The shared knowledge lived nowhere permanent, so every new spec re-imported it by hand.",
       "stage3.tag": "Stage 3 · current",
       "stage3.h": "Harness Engineering",
       "stage3.p": "The project now keeps a standing <code>harness/</code> directory: baseline facts, active constraints, pre- and post-implementation checklists, a phase-prompt template, and a running improvement log. A new phase references this shared, persistent state instead of restating it — only the <em>delta</em> for that phase enters the window.",
+      "stage3.cost": "The harness itself has to be kept up to date — a constraint or a decision that changes must be edited once in the harness, or future phases will read a stale fact. That upkeep is paid once per change, not once per phase.",
       "stage3.win": "The baseline is written once and reused everywhere. Each session starts by reading the harness, so facts stay consistent, mistakes are logged and not repeated, and the context window is freed up for actual implementation and review. This is the workflow the project runs on today.",
 
       "cw.title": "Anatomy of a Context Window",
@@ -53,26 +58,29 @@
       "cw.input_header": "Input tokens",
       "cw.input_sub": "What the model reads before answering",
       "cw.sys": "System instructions",
+      "cw.sys.why": "Fixed cost on every request — the same rules apply regardless of task, so this share can't shrink further.",
       "cw.ctx": "Project context &amp; constraints",
+      "cw.ctx.why": "Grows every time facts must be restated — exactly the share the standing <code>harness/</code> directory exists to shrink.",
       "cw.spec": "Phase specification",
+      "cw.spec.why": "The actual task-specific ask — the only input block that should scale with the size of the work, not with how many sessions came before it.",
       "cw.output_header": "Output tokens",
       "cw.output_sub": "What the model generates in response",
       "cw.code": "Generated code",
+      "cw.code.why": "The direct deliverable — the reason the request was made in the first place.",
       "cw.audit": "Audit reports &amp; tests",
+      "cw.audit.why": "Verification evidence that the code is correct — the harness's post-implementation checklist requires it every phase.",
       "cw.note": "The window is finite: input and output compete for the same space. Reducing repeated input is what leaves more room for output.",
 
-      "chart.title": "Efficiency Across the Three Techniques",
+      "chart.title": "Comparing the Three Techniques",
       "chart.illustrative": "illustrative",
-      "chart.caption": "Reading left to right, each technique spends a smaller share of the window on repeated setup (blue) and a larger share on real output (mint). The dashed line traces the shrinking setup overhead. These proportions are illustrative — they show the shape of the improvement, not measured token counts.",
-      "chart.aria": "Illustrative chart showing input versus output token composition across the three AI workflow stages, with a downward trend in repeated setup overhead from prompt engineering to harness engineering.",
-      "legend.input": "Input tokens — repeated setup / context",
-      "legend.output": "Output tokens — actual work",
-      "legend.line": "Setup overhead (falling)",
+      "chart.caption": "Each technique scored on three axes: how much of the context window it consumes on repeated setup, how many tokens it costs per phase, and the quality of the results it produced. These scores are illustrative — they show the shape of the improvement across stages, not measured token counts.",
+      "chart.aria": "Illustrative grouped bar chart comparing prompt engineering, spec-driven development, and harness engineering across three axes: context-window impact, token usage, and quality of results.",
+      "legend.context": "Context-window impact",
+      "legend.tokens": "Token usage per phase",
+      "legend.quality": "Quality of results",
       "chart.s1": "Prompt\nEngineering",
       "chart.s2": "Spec-Driven\nDevelopment",
       "chart.s3": "Harness\nEngineering",
-      "chart.input_label": "setup",
-      "chart.output_label": "output",
 
       "s3.title": "Technical Highlights",
       "s3.lead": "Each choice below was made for a concrete reason — not just what the stack is, but why it earns its place and what it buys the project.",
@@ -92,13 +100,28 @@
       "t7.p": "15 random rectangular boards, 5 figure silhouettes, and 10 multi-layer 3D figures. A Node generator/validator checks every level for solvability, connectivity, and shape rules before it ships, so no unsolvable or malformed board can reach a player.",
       "t8.h": "Challenge Modes",
       "t8.p": "Time Attack, Move Limit, and Perfect Run layer over campaign levels through a strategy pattern for scoring, with fully separate save state. Adding a new challenge type means adding one strategy — the core game loop stays untouched.",
+      "t9.h": "Backend-Driven Dynamic Levels",
+      "t9.p": "On top of the 30 bundled levels, the client can fetch additional real, playable levels straight from the backend (reserved level numbers 1000+) and merge them into the level list at runtime — new content ships by seeding the database, with no app rebuild. The merge stays offline-first: the 30 local levels are always authoritative, a number conflict always keeps the local level, and a failed or absent backend falls back to the last successfully cached remote batch rather than losing previously downloaded content.",
+
+      "s_impl.title": "Technical Implementation",
+      "s_impl.lead": "How Nodus is actually put together: what each side of the stack is responsible for, how they relate, which architecture backs each repository, and the cross-cutting concerns applied to the backend.",
+      "impl1.h": "Frontend Responsibility",
+      "impl1.p": "The Flutter client owns all gameplay: the graph domain, movement resolution, rendering, audio, and local persistence. Each feature is organised Domain &rarr; Application &rarr; Infrastructure &rarr; Presentation, and the domain layer stays pure Dart — no Flutter, HTTP, or storage imports — so the rules that decide whether an arrow escapes or collides can be unit-tested with no UI and no network involved.",
+      "impl2.h": "Backend Responsibility",
+      "impl2.p": "The NestJS API owns accounts, the level catalog, progress persistence and sync, and leaderboards — organised as <code>src/{domain, application, infrastructure, interfaces}</code>, with Prisma as the ORM and migration layer and Swagger docs served at <code>/api/docs</code>. It never runs gameplay logic; that responsibility stays entirely on the client.",
+      "impl3.h": "How Frontend and Backend Relate",
+      "impl3.p": "The relationship is strictly additive. Local levels remain the offline source of truth; the client maps them to backend level ids through <code>GET /levels</code>. Progress sync applies a merge policy that never discards a better local result. Leaderboard submission happens only when the player is authenticated, and is best-effort and non-blocking — a failed or absent backend never blocks local play. The same <code>GET /levels</code> call also lets the client download extra, real, playable levels the backend has seeded (reserved numbers 1000+) and merge them in at runtime, offline-first and local-wins, so new content can ship without an app rebuild.",
+      "impl4.h": "Architecture Impact",
+      "impl4.p": "Both repositories use Clean/hexagonal architecture. Isolating business rules from frameworks means they can be unit-tested without booting a UI or a database, adapters (a Prisma repository, an HTTP client, SharedPreferences) can be swapped behind a port without touching a single use case, and a failure in one adapter — a dropped connection, a slow disk — can't leak into the rules that decide correctness.",
+      "impl5.h": "AOP — Three Cross-Cutting Concerns",
+      "impl5.p": "The backend separates cross-cutting concerns from business logic using NestJS interceptors, filters, and guards. Two are applied <strong>globally</strong>: a logging &amp; performance interceptor wraps every HTTP handler, recording method/path/status/time with zero controller changes; a global exception filter normalises any thrown error into one consistent JSON response shape. Security is the third concern, and it is applied <strong>per-route</strong>, not globally: a JWT guard validates the bearer token on protected routes (progress, leaderboard submission, admin endpoints), and a roles guard plus a <code>@Roles(ADMIN)</code> decorator additionally restrict the two admin-only level endpoints.",
 
       "s4.title": "Closing",
-      "s4.lead": "Nodus began as a small graph-based puzzle prototype and grew into a full 2D and 3D game with an optional online backend — built alongside a development workflow that matured right beside it, from prompt engineering, to specs, to a proper harness. The result is a project where the game and the way it was made both reflect the same idea: write the rules down once, keep them clean, and reuse them everywhere. Thank you to <strong>Professor Carlos Alonso</strong> for the guidance throughout this capstone project.",
+      "s4.lead": "Nodus began as a small graph-based puzzle prototype and grew into a full 2D and 3D game with an optional online backend — built alongside a development workflow that matured right beside it, from prompt engineering, to specs, to a proper harness. The result is a project where the game and the way it was made both reflect the same idea: write the rules down once, keep them clean, and reuse them everywhere. Thank you to <strong>Professor Carlos Alonso</strong> for the guidance throughout the course.",
       "link.backend": "Backend Repository",
       "link.frontend": "Frontend Repository",
       "link.lucid": "Lucidchart Diagram",
-      "footer.text": "Nodus — University Capstone Project",
+      "footer.text": "Nodus — Software Development Course Project",
       "footer.top": "Back to top ↑"
     },
 
@@ -108,6 +131,7 @@
       "nav.overview": "Resumen",
       "nav.workflow": "Flujo de IA",
       "nav.highlights": "Aspectos Técnicos",
+      "nav.implementation": "Implementación",
       "nav.closing": "Cierre",
       "lang.aria": "Cambiar idioma a inglés",
 
@@ -128,19 +152,23 @@
 
       "s2.title": "Evolución del Flujo de IA",
       "s2.lead": "Nodus se construyó con un asistente de programación de IA, y la forma en que el equipo trabajó <em>con</em> ese asistente cambió tanto como el propio juego. Cada solicitud al modelo llena una <strong>ventana de contexto</strong> de tamaño fijo — el texto que el modelo lee antes de responder. La historia a continuación trata de gastar cada vez menos de esa ventana en volver a explicar el proyecto, y más en producir trabajo correcto. Pasó por tres etapas.",
-      "problem.label": "El problema",
+      "problem.label": "Por qué el proyecto avanzó",
+      "cost.label": "Qué costó",
       "win.label": "Por qué perduró",
       "stage1.tag": "Etapa 1",
       "stage1.h": "Ingeniería de Prompts",
       "stage1.p": "Las primeras fases dependían de prompts únicos redactados con cuidado. Cada sesión volvía a explicar desde cero la arquitectura, las restricciones y el historial, todo dentro del propio prompt.",
+      "stage1.cost": "Cada sesión pagaba de nuevo el mismo costo de preparación: una gran parte de los tokens de entrada de cada solicitud se gastaba en restablecer contexto que no producía código nuevo, dejando menos ventana disponible para la tarea real.",
       "stage1.problem": "El contexto había que reconstruirlo por completo cada vez. El prompt se volvía inmanejable, los datos variaban entre sesiones y una gran parte de la ventana se gastaba en repetir cosas que el proyecto ya conocía antes de poder empezar el trabajo real.",
       "stage2.tag": "Etapa 2",
       "stage2.h": "Desarrollo Guiado por Especificaciones",
       "stage2.p": "Para combatir esa deriva, el trabajo pasó a especificaciones escritas: documentos de fase estructurados que indicaban exactamente qué construir, qué archivos estaban en alcance y qué reglas aplicaban. Al modelo se le dirigía a una especificación en vez de a un párrafo improvisado.",
+      "stage2.cost": "La ambigüedad y el retrabajo bajaron, pero cada documento de fase seguía duplicando a mano los mismos datos de base, así que el tamaño del prompt por fase se mantenía grande aunque el ir y venir ya no lo estuviera.",
       "stage2.problem": "Las especificaciones redujeron la ambigüedad y el ir y venir repetido, pero cada fase seguía llevando su propio documento a medida que duplicaba los mismos datos de base. El conocimiento compartido no vivía en ningún lugar permanente, así que cada nueva especificación lo reimportaba a mano.",
       "stage3.tag": "Etapa 3 · actual",
       "stage3.h": "Ingeniería de Harness",
       "stage3.p": "El proyecto ahora mantiene un directorio <code>harness/</code> permanente: datos de base, restricciones activas, listas de verificación previas y posteriores a la implementación, una plantilla de prompt de fase y un registro continuo de mejoras. Una fase nueva referencia este estado compartido y persistente en vez de repetirlo — solo el <em>delta</em> de esa fase entra en la ventana.",
+      "stage3.cost": "El propio harness debe mantenerse actualizado — una restricción o decisión que cambia debe editarse una sola vez en el harness, o las fases futuras leerán un dato desactualizado. Ese mantenimiento se paga una vez por cambio, no una vez por fase.",
       "stage3.win": "La base se escribe una vez y se reutiliza en todas partes. Cada sesión empieza leyendo el harness, así que los datos se mantienen consistentes, los errores se registran y no se repiten, y la ventana de contexto queda libre para la implementación y la revisión reales. Este es el flujo de trabajo con el que funciona el proyecto hoy.",
 
       "cw.title": "Anatomía de una Ventana de Contexto",
@@ -149,26 +177,29 @@
       "cw.input_header": "Tokens de entrada",
       "cw.input_sub": "Lo que el modelo lee antes de responder",
       "cw.sys": "Instrucciones del sistema",
+      "cw.sys.why": "Costo fijo en cada solicitud — las mismas reglas aplican sin importar la tarea, así que esta parte no puede reducirse más.",
       "cw.ctx": "Contexto y restricciones del proyecto",
+      "cw.ctx.why": "Crece cada vez que hay que repetir datos — exactamente la parte que el directorio <code>harness/</code> permanente existe para reducir.",
       "cw.spec": "Especificación de la fase",
+      "cw.spec.why": "El encargo específico de la tarea — la única parte de la entrada que debería escalar con el tamaño del trabajo, no con cuántas sesiones hubo antes.",
       "cw.output_header": "Tokens de salida",
       "cw.output_sub": "Lo que el modelo genera en respuesta",
       "cw.code": "Código generado",
+      "cw.code.why": "El entregable directo — la razón por la que se hizo la solicitud.",
       "cw.audit": "Informes de auditoría y pruebas",
+      "cw.audit.why": "Evidencia de verificación de que el código es correcto — la lista de verificación posterior a la implementación del harness lo exige en cada fase.",
       "cw.note": "La ventana es finita: la entrada y la salida compiten por el mismo espacio. Reducir la entrada repetida es lo que deja más lugar para la salida.",
 
-      "chart.title": "Eficiencia entre las Tres Técnicas",
+      "chart.title": "Comparación entre las Tres Técnicas",
       "chart.illustrative": "ilustrativo",
-      "chart.caption": "De izquierda a derecha, cada técnica gasta una parte menor de la ventana en la preparación repetida (azul) y una parte mayor en la salida real (menta). La línea discontinua traza la caída de la sobrecarga de preparación. Estas proporciones son ilustrativas — muestran la forma de la mejora, no recuentos de tokens medidos.",
-      "chart.aria": "Gráfico ilustrativo que muestra la composición de tokens de entrada frente a salida a lo largo de las tres etapas del flujo de IA, con una tendencia decreciente en la sobrecarga de preparación repetida desde la ingeniería de prompts hasta la ingeniería de harness.",
-      "legend.input": "Tokens de entrada — preparación / contexto repetido",
-      "legend.output": "Tokens de salida — trabajo real",
-      "legend.line": "Sobrecarga de preparación (en descenso)",
+      "chart.caption": "Cada técnica puntuada en tres ejes: cuánto de la ventana de contexto consume en preparación repetida, cuántos tokens cuesta por fase y la calidad de los resultados que produjo. Estas puntuaciones son ilustrativas — muestran la forma de la mejora entre etapas, no recuentos de tokens medidos.",
+      "chart.aria": "Gráfico ilustrativo de barras agrupadas que compara la ingeniería de prompts, el desarrollo guiado por especificaciones y la ingeniería de harness en tres ejes: impacto en la ventana de contexto, uso de tokens y calidad de los resultados.",
+      "legend.context": "Impacto en la ventana de contexto",
+      "legend.tokens": "Uso de tokens por fase",
+      "legend.quality": "Calidad de los resultados",
       "chart.s1": "Ingeniería\nde Prompts",
       "chart.s2": "Guiado por\nEspecificaciones",
       "chart.s3": "Ingeniería\nde Harness",
-      "chart.input_label": "preparación",
-      "chart.output_label": "salida",
 
       "s3.title": "Aspectos Técnicos",
       "s3.lead": "Cada elección a continuación se tomó por una razón concreta — no solo qué es la tecnología, sino por qué se gana su lugar y qué le aporta al proyecto.",
@@ -188,13 +219,28 @@
       "t7.p": "15 tableros rectangulares aleatorios, 5 siluetas de figuras y 10 figuras 3D de varias capas. Un generador/validador en Node revisa cada nivel en cuanto a resolubilidad, conectividad y reglas de forma antes de publicarlo, de modo que ningún tablero irresoluble o mal formado pueda llegar a un jugador.",
       "t8.h": "Modos de Reto",
       "t8.p": "Contrarreloj, Límite de Movimientos y Ronda Perfecta se superponen a los niveles de campaña mediante un patrón de estrategia para la puntuación, con estado de guardado totalmente separado. Añadir un nuevo tipo de reto significa añadir una estrategia — el bucle principal del juego queda intacto.",
+      "t9.h": "Niveles Dinámicos desde el Backend",
+      "t9.p": "Además de los 30 niveles incluidos, el cliente puede descargar niveles adicionales reales y jugables directamente desde el backend (números de nivel reservados 1000+) y fusionarlos en la lista de niveles en tiempo de ejecución — el contenido nuevo se publica sembrando la base de datos, sin necesidad de recompilar la app. La fusión sigue siendo offline-first: los 30 niveles locales son siempre la autoridad, un conflicto de número siempre conserva el nivel local, y un backend caído o ausente recurre al último lote remoto descargado con éxito en vez de perder contenido ya descargado.",
+
+      "s_impl.title": "Implementación Técnica",
+      "s_impl.lead": "Cómo está armado Nodus en la práctica: de qué es responsable cada lado del stack, cómo se relacionan, qué arquitectura respalda a cada repositorio y qué concerns transversales se aplican en el backend.",
+      "impl1.h": "Responsabilidad del Frontend",
+      "impl1.p": "El cliente Flutter posee todo el juego: el dominio del grafo, la resolución de movimiento, el renderizado, el audio y la persistencia local. Cada funcionalidad se organiza como Dominio &rarr; Aplicación &rarr; Infraestructura &rarr; Presentación, y la capa de dominio se mantiene en Dart puro — sin imports de Flutter, HTTP ni almacenamiento — de modo que las reglas que deciden si una flecha escapa o choca pueden probarse de forma aislada, sin interfaz ni red.",
+      "impl2.h": "Responsabilidad del Backend",
+      "impl2.p": "La API NestJS posee las cuentas, el catálogo de niveles, la persistencia y sincronización del progreso, y las clasificaciones — organizada como <code>src/{domain, application, infrastructure, interfaces}</code>, con Prisma como ORM y capa de migraciones, y documentación Swagger servida en <code>/api/docs</code>. Nunca ejecuta lógica de juego; esa responsabilidad queda completamente del lado del cliente.",
+      "impl3.h": "Cómo se Relacionan Frontend y Backend",
+      "impl3.p": "La relación es estrictamente aditiva. Los niveles locales siguen siendo la fuente de verdad sin conexión; el cliente los mapea a los ids de nivel del backend mediante <code>GET /levels</code>. La sincronización de progreso aplica una política de fusión que nunca descarta un mejor resultado local. El envío a la tabla de clasificación solo ocurre cuando el jugador está autenticado, y es best-effort y no bloqueante — un backend caído o ausente nunca bloquea el juego local. La misma llamada a <code>GET /levels</code> también permite al cliente descargar niveles adicionales reales y jugables que el backend ha sembrado (números reservados 1000+) y fusionarlos en tiempo de ejecución, offline-first y con prioridad local, para que el contenido nuevo pueda publicarse sin recompilar la app.",
+      "impl4.h": "Impacto de la Arquitectura",
+      "impl4.p": "Ambos repositorios usan arquitectura limpia/hexagonal. Aislar las reglas de negocio de los frameworks permite probarlas sin levantar una interfaz o una base de datos, los adaptadores (un repositorio Prisma, un cliente HTTP, SharedPreferences) pueden sustituirse detrás de un puerto sin tocar un solo caso de uso, y un fallo en un adaptador — una conexión caída, un disco lento — no puede filtrarse a las reglas que deciden la corrección.",
+      "impl5.h": "AOP — Tres Concerns Transversales",
+      "impl5.p": "El backend separa los concerns transversales de la lógica de negocio usando interceptores, filtros y guards de NestJS. Dos se aplican <strong>globalmente</strong>: un interceptor de registro y rendimiento envuelve cada manejador HTTP, registrando método/ruta/estado/tiempo sin cambios en los controladores; un filtro de excepciones global normaliza cualquier error lanzado en una única forma de respuesta JSON consistente. La seguridad es el tercer concern, y se aplica <strong>por ruta</strong>, no globalmente: un guard JWT valida el token portador en rutas protegidas (progreso, envío a la tabla de clasificación, endpoints de administrador), y un guard de roles junto con un decorador <code>@Roles(ADMIN)</code> restringen además los dos endpoints de nivel exclusivos para administradores.",
 
       "s4.title": "Cierre",
-      "s4.lead": "Nodus empezó como un pequeño prototipo de rompecabezas basado en grafos y creció hasta convertirse en un juego completo 2D y 3D con un backend en línea opcional — construido junto a un flujo de desarrollo que maduró a su lado, desde la ingeniería de prompts, a las especificaciones, hasta un harness propiamente dicho. El resultado es un proyecto donde el juego y la forma en que se hizo reflejan la misma idea: escribe las reglas una vez, mantenlas limpias y reutilízalas en todas partes. Gracias <strong>Profesor Carlos Alonso</strong> por la guía a lo largo de este semestre.",
+      "s4.lead": "Nodus empezó como un pequeño prototipo de rompecabezas basado en grafos y creció hasta convertirse en un juego completo 2D y 3D con un backend en línea opcional — construido junto a un flujo de desarrollo que maduró a su lado, desde la ingeniería de prompts, a las especificaciones, hasta un harness propiamente dicho. El resultado es un proyecto donde el juego y la forma en que se hizo reflejan la misma idea: escribe las reglas una vez, mantenlas limpias y reutilízalas en todas partes. Gracias <strong>Profesor Carlos Alonso</strong> por la guía a lo largo del curso.",
       "link.backend": "Repositorio del Backend",
       "link.frontend": "Repositorio del Frontend",
       "link.lucid": "Diagrama de Lucidchart",
-      "footer.text": "Nodus — Proyecto de Grado Universitario",
+      "footer.text": "Nodus — Proyecto del Curso de Desarrollo de Software",
       "footer.top": "Volver arriba ↑"
     }
   };
@@ -297,18 +343,21 @@
   }
 
   /* ------------------------------------------------------------------ *
-   * Efficiency chart (Canvas). Illustrative composition per stage:     *
-   * input (repeated setup) shrinks, output (real work) grows.          *
-   * A dashed line traces the falling setup overhead across stages.     *
+   * Technique comparison chart (Canvas). Illustrative scores per stage *
+   * across three axes: context-window impact, token usage, and        *
+   * quality of results. Separate from the context-window anatomy      *
+   * diagram above — this chart compares the three techniques, not the *
+   * composition of a single request.                                  *
    * ------------------------------------------------------------------ */
   var canvas = document.getElementById("workflowCanvas");
   var ctx = canvas && canvas.getContext ? canvas.getContext("2d") : null;
 
-  // Illustrative only — not measured token counts.
+  // Illustrative only — not measured token counts. Higher = more impact/
+  // cost for context/tokens; higher = better for quality.
   var stages = [
-    { key: "chart.s1", input: 78, output: 22 },
-    { key: "chart.s2", input: 55, output: 45 },
-    { key: "chart.s3", input: 32, output: 68 }
+    { key: "chart.s1", context: 85, tokens: 80, quality: 55 },
+    { key: "chart.s2", context: 60, tokens: 65, quality: 75 },
+    { key: "chart.s3", context: 25, tokens: 35, quality: 92 }
   ];
 
   function cssVar(name, fallback) {
@@ -324,7 +373,7 @@
 
     var dpr = window.devicePixelRatio || 1;
     var cssWidth = canvas.clientWidth || 900;
-    var cssHeight = 400;
+    var cssHeight = 420;
     canvas.width = cssWidth * dpr;
     canvas.height = cssHeight * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -332,9 +381,14 @@
 
     var textColor = cssVar("--text", "#eef0f6");
     var mutedColor = cssVar("--text-muted", "#a6acc2");
-    var inputColor = cssVar("--accent", "#6d8dff");
-    var outputColor = cssVar("--accent-2", "#7ee8c8");
-    var lineColor = cssVar("--accent-warm", "#ffb26b");
+    var contextColor = cssVar("--accent", "#6d8dff");
+    var tokensColor = cssVar("--accent-warm", "#ffb26b");
+    var qualityColor = cssVar("--accent-2", "#7ee8c8");
+    var metrics = [
+      { key: "context", color: contextColor },
+      { key: "tokens", color: tokensColor },
+      { key: "quality", color: qualityColor }
+    ];
 
     var padL = 52;
     var padR = 32;
@@ -344,7 +398,8 @@
     var chartH = cssHeight - padT - padB;
     var baseY = padT + chartH;
     var groupW = chartW / stages.length;
-    var barW = Math.min(96, groupW * 0.44);
+    var barGap = 6;
+    var barW = Math.min(64, (groupW * 0.7 - barGap * (metrics.length - 1)) / metrics.length);
 
     // Gridlines + percentage axis
     ctx.font = "11px -apple-system, Segoe UI, Roboto, sans-serif";
@@ -359,36 +414,28 @@
       ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.fillStyle = mutedColor;
-      ctx.fillText(pct + "%", padL - 8, y + 4);
+      ctx.fillText(pct, padL - 8, y + 4);
     });
-
-    var boundaryPoints = [];
 
     stages.forEach(function (stage, i) {
       var groupX = padL + i * groupW + groupW / 2;
-      var barX = groupX - barW / 2;
+      var groupWidth = metrics.length * barW + (metrics.length - 1) * barGap;
+      var startX = groupX - groupWidth / 2;
 
-      var inputH = (stage.input / 100) * chartH;
-      var outputH = (stage.output / 100) * chartH;
+      metrics.forEach(function (metric, mi) {
+        var value = stage[metric.key];
+        var barH = (value / 100) * chartH;
+        var barX = startX + mi * (barW + barGap);
+        var barY = baseY - barH;
 
-      // Input segment (bottom)
-      var inputY = baseY - inputH;
-      ctx.fillStyle = inputColor;
-      ctx.fillRect(barX, inputY, barW, inputH);
+        ctx.fillStyle = metric.color;
+        ctx.fillRect(barX, barY, barW, barH);
 
-      // Output segment (top)
-      var outputY = inputY - outputH;
-      ctx.fillStyle = outputColor;
-      ctx.fillRect(barX, outputY, barW, outputH);
-
-      boundaryPoints.push({ x: groupX, y: inputY });
-
-      // Segment value labels
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#0f1117";
-      ctx.font = "bold 13px -apple-system, Segoe UI, Roboto, sans-serif";
-      ctx.fillText(stage.input + "%", groupX, inputY + inputH / 2 + 4);
-      ctx.fillText(stage.output + "%", groupX, outputY + outputH / 2 + 4);
+        ctx.textAlign = "center";
+        ctx.fillStyle = textColor;
+        ctx.font = "bold 11px -apple-system, Segoe UI, Roboto, sans-serif";
+        ctx.fillText(value, barX + barW / 2, barY - 6);
+      });
 
       // Stage name (supports \n)
       ctx.fillStyle = textColor;
@@ -397,29 +444,6 @@
       label.forEach(function (line, li) {
         ctx.fillText(line, groupX, baseY + 22 + li * 15);
       });
-    });
-
-    // Dashed trend line over the input/output boundary (falling overhead)
-    ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 5]);
-    ctx.beginPath();
-    boundaryPoints.forEach(function (pt, i) {
-      if (i === 0) {
-        ctx.moveTo(pt.x, pt.y);
-      } else {
-        ctx.lineTo(pt.x, pt.y);
-      }
-    });
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Trend markers
-    boundaryPoints.forEach(function (pt) {
-      ctx.fillStyle = lineColor;
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
-      ctx.fill();
     });
 
     ctx.textAlign = "left";
