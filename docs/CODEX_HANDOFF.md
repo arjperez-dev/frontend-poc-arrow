@@ -3174,3 +3174,147 @@ Phase 34.5 — validation & integration testing (end-to-end fallback-when-down, 
 None required by the Phase 34 plan — 34.1-34.5 are complete; the only
 carried-forward follow-up is enabling `AppConfig.enableRemoteLevels` by
 default once the widget-test fake-injection gap above is closed.
+
+## Phase 35 — Landing Page Project Showcase (Framing, AI Techniques, Technical Depth)
+
+Follow-up pass on the same three `docs/pages/` files from Phase 33/33.1 (no
+new files created; no source/test/config touched). Corrects academic
+framing, deepens the AI-workflow narrative with real graphics, and adds a
+new technical-implementation section.
+
+### What Changed
+
+- **Framing correction (Task 1).** Replaced every capstone/thesis/degree
+  framing with a single consistent phrase across both languages and both
+  files: footer `"Nodus — Software Development Course Project"` /
+  `"Nodus — Proyecto del Curso de Desarrollo de Software"`; the closing
+  `s4.lead` now ends "…guidance throughout the course" / "…a lo largo del
+  curso" in both `index.html`'s fallback text and `script.js`'s EN/ES
+  values (previously EN HTML said "this semester" while EN JS said "this
+  capstone project" — now identical). Grep for
+  `capstone|thesis|grado|tesis|degree` returns zero hits.
+- **AI-workflow rework (Task 3).** Each of the three stage cards now states
+  what the technique is, what it cost (new "What it cost" block,
+  `stage1.cost`/`stage2.cost`/`stage3.cost`), and why the project moved on
+  (relabeled "Why the project moved on") or — for Harness Engineering —
+  why it stuck. Content builds on the existing problem/win text rather
+  than replacing it.
+- **Context-window diagram rework (Task 4a).** The old two-column bullet
+  list is now a proportional diagram: each of the 3 input blocks and 2
+  output blocks shows an illustrative percentage, a proportional bar
+  (`.cw-bar-track`/`.cw-bar-fill`), and a one-line "why" explaining why
+  that part costs what it does (e.g. project context "is exactly the
+  share the harness exists to shrink"). Tagged `illustrative` (reusing the
+  existing `chart.illustrative` key) since the proportions are invented,
+  not measured.
+- **New comparison chart (Task 4b), separate from the diagram.** The
+  existing `#workflowCanvas` (previously a 2-stage input/output stacked
+  bar with a trend line) was redrawn as a grouped bar chart: 3 technique
+  groups × 3 axes — context-window impact, token usage, quality of
+  results — all illustrative and still redrawing correctly on language
+  toggle and resize. `stages` data and `drawChart()` rewritten;
+  `legend.context`/`legend.tokens`/`legend.quality` replace the old
+  `legend.input`/`legend.output`/`legend.line` keys.
+- **New Technical Implementation section (Task 5).** Inserted as section
+  04 (renumbered: Highlights stays 03, Closing becomes 05). Five cards:
+  frontend responsibility (Clean Architecture, pure domain), backend
+  responsibility (`src/{domain,application,infrastructure,interfaces}`,
+  Prisma, Swagger at `/api/docs`), how they relate (offline-first local
+  levels, `GET /levels` id mapping, merge policy, best-effort leaderboard,
+  JWT), architecture impact (testability, isolation, substitutable
+  adapters), and AOP presented as **three** concerns — logging/performance
+  and exception handling applied globally, security/authorisation applied
+  **per-route** via `JwtAuthGuard`/`RolesGuard`/`@Roles(ADMIN)` — verified
+  against `backend-poc-arrow/README.md`'s AOP section before writing any
+  copy, per the phase doc's correction that security is not the global
+  aspect.
+- **Presentation-only cleanup.** Fixed a leftover grammar typo in `s1.lead`
+  ("Nodus is a graph-based puzzle game built." → "…game."); alternating
+  section background (`section-alt`) re-checked across the new 5-section
+  order; nav gained an "Implementation"/"Implementación" link.
+- Every new/changed string has both EN and ES keys in `script.js`; the one
+  HTML fallback string that changed (`s4.lead`'s closing line) matches its
+  `data-i18n` counterpart.
+
+### Files Touched
+
+- `docs/pages/index.html`
+- `docs/pages/script.js`
+- `docs/pages/styles.css`
+
+### Verification Results
+
+- `flutter analyze` / `flutter test`: not applicable (no Dart files
+  touched).
+- `node tool/gen_levels.js --validate-only`: ALL VALID true for both the
+  2D and 3D level sets (sanity check only — no level files touched).
+- Verified in the Browser pane over a local static server (`file://` is
+  blocked by this session's browser tool; a throwaway `python -m
+  http.server` was used instead, matching the Phase 33 precedent): all
+  five sections render in order (01–05), no console errors, no failed
+  network requests beyond the three local files.
+- Canvas confirmed drawing via `getImageData` (~116k painted pixels at
+  900×420 CSS→device-pixel-ratio-scaled canvas).
+- Language toggle exercised via scripted clicks: EN → ES → EN updates
+  `<html lang>`, the footer, the closing lead, the new implementation
+  section title, and `localStorage` (`nodus-lang`); the `illustrative` tag
+  resolves correctly in both languages; zero `[data-i18n]` elements were
+  empty after either switch.
+- Responsive check at 375px width (`resize_window` + computed-style
+  assertions): `document.body.scrollWidth` equals `window.innerWidth` (no
+  horizontal overflow), the context-window diagram's flex-direction
+  becomes `column`, and both the overview grid and the new implementation
+  section's cards grid collapse to 1 column.
+- Grep for `capstone|thesis|grado|tesis|degree` across `docs/pages/`:
+  zero hits.
+
+### New Tests
+
+- None (static page outside the Dart/Node test suites; no automated suite
+  applies per the phase doc).
+
+### Deviations From the Phase Doc
+
+- None. All six task items were implemented as scoped; no change outside
+  `docs/pages/` (plus this documentation set) was required.
+
+### Limitations
+
+- A pixel-level pinch/mobile screenshot pass was not captured — the
+  Browser pane's `computer` screenshot action timed out (same
+  intermittent issue noted in Phase 33/33.1); verification instead used
+  `get_page_text`, `read_console_messages`, `read_network_requests`,
+  computed-style assertions, and a canvas `getImageData` pixel count,
+  which together confirm content, absence of errors, and no horizontal
+  overflow, but not exact visual pixel layout.
+- The AI-workflow cost figures and the technique-comparison chart's
+  illustrative scores remain invented, as instructed — no real token
+  measurements exist in the repo to back them; both visuals are tagged
+  `illustrative`.
+
+### Next Recommended Phase
+
+None required by this phase's scope. A future pass could capture an
+actual mobile-viewport screenshot once the Browser pane's screenshot
+timeout is resolved, purely for pixel-level (not functional) confirmation.
+
+### Follow-up — Backend-Driven Dynamic Levels Coverage
+
+The initial pass omitted the Phase 34.1–34.5 backend-driven dynamic-levels
+feature (fetch additional real levels from the backend at runtime,
+number band `>= 1000`, offline-first merge, local always wins). Added:
+- A new Technical Highlights card, `t9`/"Backend-Driven Dynamic Levels" —
+  describes the merge behaviour (local-wins, offline-cache fallback).
+  An initial draft also stated the feature ships behind a feature flag
+  currently off by default (per Phase 34.5); at the user's direction that
+  implementation detail was trimmed from the public-facing copy — the
+  page now describes the general feature only, not its rollout-flag
+  state. (The flag detail is still accurate and lives in
+  `docs/CODEX_HANDOFF.md`/`AppConfig.enableRemoteLevels`'s own doc
+  comment — just not on the landing page.)
+- A sentence added to the Technical Implementation section's "How Frontend
+  and Backend Relate" card (`impl3.p`) tying the same `GET /levels` call
+  used for id-mapping to the dynamic-levels download/merge path.
+- Both additions have EN + ES keys in `script.js`; verified via the Browser
+  pane (console clean, both languages resolve, zero empty `[data-i18n]`
+  renders after an EN→ES→EN cycle).
