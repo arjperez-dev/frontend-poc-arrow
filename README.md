@@ -13,6 +13,7 @@ Flutter graph-based puzzle game. Player-facing client only — see [`backend-poc
 
 Nodus is a graph-based puzzle game: each level is a graph of nodes and edges covered by rigid arrows. Tapping an arrow attempts a full exit in its head direction; the arrow either escapes the board entirely or the move is rolled back. The game ships 2D and 3D level sets, with an optional online account for progress sync and leaderboards.
 
+---
 
 ## Tech Stack
 
@@ -75,8 +76,6 @@ harness/
 ![Clean Architecture](./docs/frontend_clean_architecture.svg)
 
 **[View diagrams in Lucidchart](https://lucid.app/lucidchart/91a6320b-13f7-4069-8927-291808d3df97/edit?viewport_loc=-8338%2C-5684%2C17380%2C11248%2C0D3b0m6F7NPD&invitationId=inv_214f2076-e9ff-4c87-8d51-6b451a2b95e5)**
-
-
 
 ---
 
@@ -152,18 +151,6 @@ Cross-cutting concerns are separated from business logic using wrapper/intercept
 
 [`AudioManager`](lib/features/audio/infrastructure/audio_manager.dart) implements `WidgetsBindingObserver` to **intercept** app lifecycle events (pause, resume) and automatically pause/resume background music. This cross-cutting lifecycle concern is separated from the game screen and settings screens that trigger music playback.
 
-- Graph-based gameplay: full-exit arrow attempts, lives/game-over
-- 2D and 3D game modes, switchable from the home screen; each mode has its own level progression
-- 30 levels total: 2D 1–20 (15 random-layout tiers + 5 figure silhouettes — heart, diamond, club, spade, crown), 3D 21–30 (10 multi-layer figures — pyramid, diamond, hourglass, cross, starburst, cat, helix, hollow pyramid, and more)
-- Dynamic difficulty: level order, display numbers, and unlocking are driven by a computed complexity score per level (not a fixed/authored difficulty field), separately for each mode
-- Challenges: Time Attack, Move Limit, and Perfect Run modifiers over existing levels, with calculated limits and fully separate best-score tracking (no effect on campaign progress, unlocks, or sync)
-- Audio: sound effects and background music via an app-lifetime audio manager (survives navigation, ducks correctly, pauses/resumes with app lifecycle)
-- Optional auth: login/register, logged-out play fully supported
-- Progress: local-first, with optional remote sync
-- Leaderboard: per-level scores when authenticated
-- Settings: sound, music, language
-- Backend-driven dynamic levels: additional real levels served by the backend, merged into the local list (offline-first, feature-flagged, off by default)
-
 On the Flutter side, the [`LevelDefinitionValidator`](lib/features/game/domain/level_definition_validator.dart) acts as a validation gate that runs structural checks (nodes, edges, arrows, connectivity) on every level loaded from JSON assets — analogous to the backend's global `ValidationPipe`. Invalid levels are rejected before they reach the game engine.
 
 ---
@@ -171,12 +158,15 @@ On the Flutter side, the [`LevelDefinitionValidator`](lib/features/game/domain/l
 ## Key Features
 
 - **Graph-based gameplay:** full-exit arrow attempts, rigid-piece collision, lives / game-over
-- **2D and 3D level modes** with separate level sets
-- **Audio:** sound effects and background music (with app lifecycle awareness)
+- **2D and 3D game modes**, switchable from the home screen, each with its own level progression
+- **30 levels total:** 2D 1–20 (15 random-layout tiers + 5 figure silhouettes — heart, diamond, club, spade, crown), 3D 21–30 (10 multi-layer figures — pyramid, diamond, hourglass, cross, starburst, cat, helix, hollow pyramid, and more)
+- **Dynamic difficulty:** level order, display numbers, and unlocking are driven by a computed complexity score per level, not a fixed/authored difficulty field, separately for each mode
+- **Challenges:** Time Attack, Move Limit, and Perfect Run modifiers over existing levels, with calculated limits and fully separate best-score tracking (no effect on campaign progress, unlocks, or sync)
+- **Audio:** sound effects and background music via an app-lifetime audio manager (survives navigation, ducks correctly, pauses/resumes with app lifecycle)
 - **Optional auth:** login / register; logged-out play fully supported
 - **Local-first progress** with optional remote sync
 - **Leaderboard:** per-level scores when authenticated
-- **Challenges:** separate difficulty modes (Time Attack, Perfectionist, etc.)
+- **Backend-driven dynamic levels:** additional real levels served by the backend, merged into the local list (offline-first, feature-flagged, off by default)
 - **Settings:** sound, music, language (English / Spanish)
 - **Pan & zoom:** pinch-zoom and drag on dense boards, with reset-view button
 
@@ -210,7 +200,17 @@ flutter gen-l10n
 # Run on connected device / emulator
 flutter run
 
-## Backend-driven dynamic levels
+# Point the app at a backend (Android emulator example)
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
+
+# Run tests
+flutter test
+
+# Static analysis
+flutter analyze
+```
+
+### Backend-driven dynamic levels
 
 The 30 bundled levels (`assets/levels/manual_levels_2d.json`, `manual_levels_3d.json`) are always the offline source of truth and load with no backend dependency. On top of them, the backend can serve additional real, playable levels (number band `>= 1000`) that the app downloads and merges at runtime — see `backend-poc-arrow/docs/DYNAMIC_LEVELS_CONTRACT.md` for the full contract.
 
@@ -221,22 +221,13 @@ The 30 bundled levels (`assets/levels/manual_levels_2d.json`, `manual_levels_3d.
 - 2D vs 3D routing for merged levels is decided purely by graph shape (`boardGraph.isMultiLayer`), not by number.
 - The remote-levels default is currently off because several widget tests don't inject a fake level loader and would hit the network under `flutter test` if it defaulted on — see `docs/LEVEL_AUTHORING.md` §17 and `harness/context/phase_registry.md` (Phase 34.5) for details.
 
-## Run
-
-# Run tests
-flutter test
-
-# Static analysis
-flutter analyze
-```
-
 Run with backend-driven dynamic levels enabled:
 
 ```powershell
 flutter run --dart-define=ENABLE_REMOTE_LEVELS=true --dart-define=API_BASE_URL=http://10.0.2.2:3000
 ```
 
-## Level authoring / validation
+### Level authoring / validation
 
 ```powershell
 node tool/gen_levels.js --validate-only   # default; reads and checks, never writes
@@ -246,6 +237,8 @@ node tool/gen_levels.js --generate        # runs both generators
 ```
 
 `assets/levels/manual_levels_2d.json` (levels 1–20) and `assets/levels/manual_levels_3d.json` (levels 21–30) are the authoritative, tool-validated level data. Internal level numbers are storage/routing/leaderboard keys only — in-app display order and level numbers come from the computed difficulty progression, not from these files' order or their (dormant) `difficulty` field.
+
+---
 
 ## Notes
 
