@@ -227,6 +227,16 @@ Run with backend-driven dynamic levels enabled:
 flutter run --dart-define=ENABLE_REMOTE_LEVELS=true --dart-define=API_BASE_URL=http://10.0.2.2:3000
 ```
 
+### Unlock-all-levels testing flag
+
+- Off by default — enable with `--dart-define=UNLOCK_ALL_LEVELS=true` (`lib/core/config/app_config.dart`).
+- Testing only: bypasses the level-selection unlock gate so every level shows as unlocked and enterable. Does not alter saved progress — completing a level still saves normally, and once the flag is removed the app behaves exactly as if it had never been used.
+
+```powershell
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000 --dart-define=UNLOCK_ALL_LEVELS=true
+flutter run --dart-define=ENABLE_REMOTE_LEVELS=true --dart-define=API_BASE_URL=http://10.0.2.2:3000 --dart-define=UNLOCK_ALL_LEVELS=true
+```
+
 ### Level authoring / validation
 
 ```powershell

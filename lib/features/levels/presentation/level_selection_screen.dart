@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend_poc_arrow/core/localization/l10n/app_localizations.dart';
 
 import '../../../core/app/app_settings_scope.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/routing/app_routes.dart';
 import '../../../core/routing/game_route_args.dart';
 import '../../../core/theme/app_theme.dart';
@@ -151,9 +152,11 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
                 final levelNumber = level.number ?? 0;
                 // Unlock follows the sorted order: the first entry is always
                 // open; later entries need the PREVIOUS ENTRY completed.
-                final isUnlocked = progress.isUnlockedAfter(
-                  index == 0 ? null : entries[index - 1].level.number,
-                );
+                final isUnlocked =
+                    AppConfig.unlockAllLevels ||
+                    progress.isUnlockedAfter(
+                      index == 0 ? null : entries[index - 1].level.number,
+                    );
                 return _LevelCard(
                   level: level,
                   displayNumber: index + 1,

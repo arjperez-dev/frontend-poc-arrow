@@ -19,5 +19,14 @@ class AppConfig {
   static const bool enableRemoteLevels = bool.fromEnvironment(
     'ENABLE_REMOTE_LEVELS',
   );
+
+  /// Phase 36: testing-only flag that unlocks every level in the
+  /// level-selection list, bypassing the normal unlock gate. Off by default
+  /// — enable with `--dart-define=UNLOCK_ALL_LEVELS=true`. Does not alter
+  /// saved progress or completion-save logic; it only affects whether a
+  /// level card is shown as unlocked/enterable.
+  static const bool unlockAllLevels = bool.fromEnvironment(
+    'UNLOCK_ALL_LEVELS',
+  );
 }
 
