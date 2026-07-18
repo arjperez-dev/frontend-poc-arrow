@@ -251,6 +251,23 @@ node tool/gen_levels.js --generate-hex    # regenerates manual_levels_hex.json (
 
 ---
 
+## Documentation
+
+- [`docs/CODEX_HANDOFF.md`](docs/CODEX_HANDOFF.md) — authoritative project state and phase history
+- [`docs/LEVEL_AUTHORING.md`](docs/LEVEL_AUTHORING.md) — guide for creating and validating levels
+- [`docs/pages/`](docs/pages/) — static project showcase/landing page (`index.html`, `script.js`, `styles.css`)
+- [`harness/README.md`](harness/README.md) — overview of the development harness workflow
+- [`harness/phases/`](harness/phases/) — phase prompt files for AI-assisted development
+- [`harness/context/`](harness/context/) — current constraints and phase registry
+  - `current_constraints.md` — active constraints the team must respect
+  - `phase_registry.md` — registry of completed/planned phases
+  - `project_baseline.md` — baseline project state reference
+- [`harness/metrics/`](harness/metrics/) — improvement log and project metrics
+  - `improvement_log.md` — running log of process/quality improvements
+- [`harness/checklists/`](harness/checklists/) — pre/post-implementation and pre-commit checklists
+- [`harness/rules/`](harness/rules/) — architecture boundary, git workflow, and validation protocol rules
+- [`harness/templates/`](harness/templates/) — templates for phase prompts and handoff updates
+
 ## Notes
 
 - The `PixelGame` display font (`assets/fonts/PixelGame.otf`, used for the wordmark, mode toggle, and victory/game-over titles) is licensed 1001Fonts FFP — personal use only. A commercial release requires the author's written permission.
