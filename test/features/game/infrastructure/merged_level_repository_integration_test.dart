@@ -6,10 +6,12 @@ import 'package:frontend_poc_arrow/features/game/infrastructure/local_level_data
 import 'package:frontend_poc_arrow/features/game/infrastructure/asset_text_loader.dart';
 import 'package:frontend_poc_arrow/features/game/infrastructure/merged_level_repository.dart';
 import 'package:frontend_poc_arrow/features/game/presentation/level_mode_filter.dart';
+import 'package:frontend_poc_arrow/features/settings/domain/game_mode.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Phase 34.5: proves the full backend-driven-levels path end-to-end using
-/// the real local asset repository (levels 1-30), the real
+/// the real local asset repository (levels 1-40: 2D 1-20, 3D 21-30, hex
+/// 31-40 as of Phase 37.4), the real
 /// [ApiRemoteLevelDefinitionRepository] mapping logic, and the real
 /// [MergedLevelRepository] merge/cache policy — only the HTTP transport is
 /// faked. Also asserts the regressions the phase file requires: local levels
@@ -77,15 +79,15 @@ void main() {
       final numbers = levels.map((l) => l.number).toSet();
 
       expect(numbers.containsAll([1000, 1001]), isTrue);
-      expect(numbers.length, 32); // local 1-30 + remote 1000, 1001.
+      expect(numbers.length, 42); // local 1-40 + remote 1000, 1001.
 
       final remote2d = levels.firstWhere((l) => l.number == 1000);
       final remote3d = levels.firstWhere((l) => l.number == 1001);
       expect(isThreeDLevel(remote2d), isFalse);
       expect(isThreeDLevel(remote3d), isTrue);
 
-      final twoD = filterLevelsByGameMode(levels, wantThreeD: false);
-      final threeD = filterLevelsByGameMode(levels, wantThreeD: true);
+      final twoD = filterLevelsByGameMode(levels, mode: GameMode.twoD);
+      final threeD = filterLevelsByGameMode(levels, mode: GameMode.threeD);
       expect(twoD.any((l) => l.number == 1000), isTrue);
       expect(threeD.any((l) => l.number == 1001), isTrue);
       expect(twoD.any((l) => l.number == 1001), isFalse);
@@ -112,7 +114,7 @@ void main() {
         localOnly.map((l) => l.number).toList(),
       );
       expect(merged.map((l) => l.number).toSet(), {
-        for (var i = 1; i <= 30; i++) i,
+        for (var i = 1; i <= 40; i++) i,
       });
     },
   );

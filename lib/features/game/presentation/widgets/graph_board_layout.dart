@@ -3,8 +3,9 @@ import 'dart:ui';
 
 import '../../domain/board_graph.dart';
 import '../../domain/graph_node.dart';
+import 'board_layout.dart';
 
-class GraphBoardLayout {
+class GraphBoardLayout implements BoardLayout {
   const GraphBoardLayout._({
     required this.positionsByNodeId,
     required this.step,
@@ -15,6 +16,7 @@ class GraphBoardLayout {
   /// Pixel distance between adjacent grid coordinates. Used to scale arrow
   /// stroke width and arrowhead size so dense boards don't draw arrowheads
   /// that reach past their own cell and over a neighbouring arrow.
+  @override
   final double step;
 
   factory GraphBoardLayout.fromGraph({
@@ -55,6 +57,7 @@ class GraphBoardLayout {
     );
   }
 
+  @override
   Offset? positionOf(String nodeId) => positionsByNodeId[nodeId];
 
   static Offset _positionFor(

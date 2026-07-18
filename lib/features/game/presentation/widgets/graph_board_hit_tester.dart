@@ -3,8 +3,16 @@ import 'dart:ui';
 
 import '../../domain/game_session.dart';
 import 'board_geometry.dart';
-import 'graph_board_layout.dart';
+import 'board_layout.dart';
 
+/// Metric arrow picker: distance to the head, then distance to each body
+/// segment. Works unchanged on square and hex boards — it has no cell-shape
+/// assumption, only [BoardLayout.step] (uniform centre-to-centre spacing on
+/// both lattices) for tolerance scaling. On a hex lattice every one of the
+/// 6 neighbour directions is exactly `step` pixels away (same guarantee the
+/// square board gives across its 4 directions), so the 0.45 cap below stays
+/// below half that spacing regardless of topology — verified algebraically
+/// for the pointy-top axial mapping, no retune needed.
 class GraphBoardHitTester {
   const GraphBoardHitTester({this.maxHitSlop = 28, this.minHitSlop = 6});
 
@@ -21,7 +29,7 @@ class GraphBoardHitTester {
 
   String? findArrowAt({
     required GameSession session,
-    required GraphBoardLayout layout,
+    required BoardLayout layout,
     required Offset position,
   }) {
     final hitSlop = _hitSlopFor(layout.step);

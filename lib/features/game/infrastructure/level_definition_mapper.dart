@@ -1,3 +1,4 @@
+import '../domain/board_topology.dart';
 import '../domain/level_definition.dart';
 import '../domain/move_direction.dart';
 import 'manual_level_dto.dart';
@@ -10,6 +11,9 @@ class LevelDefinitionMapper {
     final metadata = Map<String, Object?>.from(dto.definitionJson.metadata)
       ..['number'] = dto.number
       ..['difficulty'] = dto.difficulty;
+    final topology = metadata['topology'] == 'hex'
+        ? BoardTopology.hex
+        : BoardTopology.square;
 
     return LevelDefinition(
       id: 'manual-${dto.number.toString().padLeft(3, '0')}',
@@ -43,7 +47,7 @@ class LevelDefinitionMapper {
                   .toList(growable: false),
               startNodeId: arrow.startNodeId,
               endNodeId: arrow.endNodeId,
-              direction: MoveDirection.parse(arrow.direction),
+              direction: MoveDirection.parse(arrow.direction, topology: topology),
             ),
           )
           .toList(growable: false),

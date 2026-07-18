@@ -11,7 +11,7 @@ Flutter graph-based puzzle game. Player-facing client only — see [`backend-poc
 
 ## Description
 
-Nodus is a graph-based puzzle game: each level is a graph of nodes and edges covered by rigid arrows. Tapping an arrow attempts a full exit in its head direction; the arrow either escapes the board entirely or the move is rolled back. The game ships 2D and 3D level sets, with an optional online account for progress sync and leaderboards.
+Nodus is a graph-based puzzle game: each level is a graph of nodes and edges covered by rigid arrows. Tapping an arrow attempts a full exit in its head direction; the arrow either escapes the board entirely or the move is rolled back. The game ships 2D, 3D, and hexagonal level sets, with an optional online account for progress sync and leaderboards.
 
 ---
 
@@ -62,7 +62,7 @@ lib/
 assets/
   audio/       sound effects and background music
   fonts/       PixelGame custom font
-  levels/      manual_levels_2d.json, manual_levels_3d.json
+  levels/      manual_levels_2d.json, manual_levels_3d.json, manual_levels_hex.json
 test/
 tool/          level generator/validator (gen_levels.js)
 docs/
@@ -158,9 +158,9 @@ On the Flutter side, the [`LevelDefinitionValidator`](lib/features/game/domain/l
 ## Key Features
 
 - **Graph-based gameplay:** full-exit arrow attempts, rigid-piece collision, lives / game-over
-- **2D and 3D game modes**, switchable from the home screen, each with its own level progression
-- **30 levels total:** 2D 1–20 (15 random-layout tiers + 5 figure silhouettes — heart, diamond, club, spade, crown), 3D 21–30 (10 multi-layer figures — pyramid, diamond, hourglass, cross, starburst, cat, helix, hollow pyramid, and more)
-- **Dynamic difficulty:** level order, display numbers, and unlocking are driven by a computed complexity score per level, not a fixed/authored difficulty field, separately for each mode
+- **2D, 3D, and hexagonal game modes**, switchable from the home screen, each with its own level progression
+- **40 levels total:** 2D 1–20 (15 random-layout tiers + 5 figure silhouettes — heart, diamond, club, spade, crown), 3D 21–30 (10 multi-layer figures — pyramid, diamond, hourglass, cross, starburst, cat, helix, hollow pyramid, and more), hex 31–40 (10 pointy-top hexagonal boards, axial coordinates, six-direction arrow exits)
+- **Dynamic difficulty:** level order, display numbers, and unlocking are driven by a computed complexity score per level (rank-relative within each mode, so no fixed threshold needs recalibrating as content changes), not a fixed/authored difficulty field, separately for each mode
 - **Challenges:** Time Attack, Move Limit, and Perfect Run modifiers over existing levels, with calculated limits and fully separate best-score tracking (no effect on campaign progress, unlocks, or sync)
 - **Audio:** sound effects and background music via an app-lifetime audio manager (survives navigation, ducks correctly, pauses/resumes with app lifecycle)
 - **Optional auth:** login / register; logged-out play fully supported
@@ -212,7 +212,7 @@ flutter analyze
 
 ### Backend-driven dynamic levels
 
-The 30 bundled levels (`assets/levels/manual_levels_2d.json`, `manual_levels_3d.json`) are always the offline source of truth and load with no backend dependency. On top of them, the backend can serve additional real, playable levels (number band `>= 1000`) that the app downloads and merges at runtime — see `backend-poc-arrow/docs/DYNAMIC_LEVELS_CONTRACT.md` for the full contract.
+The 40 bundled levels (`assets/levels/manual_levels_2d.json`, `manual_levels_3d.json`, `manual_levels_hex.json`) are always the offline source of truth and load with no backend dependency. On top of them, the backend can serve additional real, playable levels (number band `>= 1000`) that the app downloads and merges at runtime — see `backend-poc-arrow/docs/DYNAMIC_LEVELS_CONTRACT.md` for the full contract.
 
 - Off by default — enable with `--dart-define=ENABLE_REMOTE_LEVELS=true` (`lib/core/config/app_config.dart`).
 - `MergedLevelRepository` (`lib/features/game/infrastructure/`) loads local levels first, best-effort fetches remote levels, and appends any whose number isn't already local; local always wins on a numbering conflict.
@@ -240,13 +240,14 @@ flutter run --dart-define=ENABLE_REMOTE_LEVELS=true --dart-define=API_BASE_URL=h
 ### Level authoring / validation
 
 ```powershell
-node tool/gen_levels.js --validate-only   # default; reads and checks, never writes
+node tool/gen_levels.js --validate-only   # default; reads and checks all three sets, never writes
 node tool/gen_levels.js --generate-2d
 node tool/gen_levels.js --generate-3d
-node tool/gen_levels.js --generate        # runs both generators
+node tool/gen_levels.js --generate        # runs both the 2D and 3D generators
+node tool/gen_levels.js --generate-hex    # regenerates manual_levels_hex.json (levels 31-40)
 ```
 
-`assets/levels/manual_levels_2d.json` (levels 1–20) and `assets/levels/manual_levels_3d.json` (levels 21–30) are the authoritative, tool-validated level data. Internal level numbers are storage/routing/leaderboard keys only — in-app display order and level numbers come from the computed difficulty progression, not from these files' order or their (dormant) `difficulty` field.
+`assets/levels/manual_levels_2d.json` (levels 1–20), `assets/levels/manual_levels_3d.json` (levels 21–30), and `assets/levels/manual_levels_hex.json` (levels 31–40) are the authoritative, tool-validated level data. Internal level numbers are storage/routing/leaderboard keys only — in-app display order and level numbers come from the computed difficulty progression, not from these files' order or their (dormant) `difficulty` field. Hex levels store axial `(q, r)` coordinates directly in the existing node `x`/`y` fields and are flagged via `metadata.topology: "hex"` (read explicitly, not inferred from graph shape — see `docs/LEVEL_AUTHORING.md` §18).
 
 ---
 

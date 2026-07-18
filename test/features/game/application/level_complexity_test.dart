@@ -10,6 +10,7 @@ import 'package:frontend_poc_arrow/features/game/infrastructure/asset_level_repo
 import 'package:frontend_poc_arrow/features/game/infrastructure/asset_text_loader.dart';
 import 'package:frontend_poc_arrow/features/game/infrastructure/local_level_data_source.dart';
 import 'package:frontend_poc_arrow/features/game/presentation/level_mode_filter.dart';
+import 'package:frontend_poc_arrow/features/settings/domain/game_mode.dart';
 
 import '../game_test_fixtures.dart';
 
@@ -206,7 +207,7 @@ void main() {
 
     test('should_spread_2d_progression_across_all_three_tiers', () {
       final progression = LevelProgression.fromLevels(
-        filterLevelsByGameMode(levels, wantThreeD: false),
+        filterLevelsByGameMode(levels, mode: GameMode.twoD),
       );
       final tiers = progression.entries.map((entry) => entry.tier).toSet();
 
@@ -215,7 +216,21 @@ void main() {
 
     test('should_spread_3d_progression_across_all_three_tiers', () {
       final progression = LevelProgression.fromLevels(
-        filterLevelsByGameMode(levels, wantThreeD: true),
+        filterLevelsByGameMode(levels, mode: GameMode.threeD),
+      );
+      final tiers = progression.entries.map((entry) => entry.tier).toSet();
+
+      expect(tiers, ComplexityTier.values.toSet());
+    });
+
+    // Rank-relative tiering (thirds of the mode's own sorted progression, not
+    // an absolute score threshold) means a 6-neighbour hex board needs no
+    // separate calibration: as long as hex has >=3 levels it spreads across
+    // all three tiers exactly like 3D does despite outscoring every easy 2D
+    // level on the raw composite score.
+    test('should_spread_hex_progression_across_all_three_tiers', () {
+      final progression = LevelProgression.fromLevels(
+        filterLevelsByGameMode(levels, mode: GameMode.hex),
       );
       final tiers = progression.entries.map((entry) => entry.tier).toSet();
 

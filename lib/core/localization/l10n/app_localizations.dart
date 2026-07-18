@@ -146,6 +146,12 @@ abstract class AppLocalizations {
   /// **'3D'**
   String get gameMode3D;
 
+  /// No description provided for @gameModeHex.
+  ///
+  /// In en, this message translates to:
+  /// **'HEX'**
+  String get gameModeHex;
+
   /// No description provided for @gameModeHint.
   ///
   /// In en, this message translates to:

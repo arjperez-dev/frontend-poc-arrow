@@ -40,16 +40,17 @@ void main() {
   });
 
   // Merged-repository integration assertions: the combined list must still
-  // load all 30 levels (2D 1-20 from manual_levels_2d.json, 3D 21-30 from
-  // manual_levels_3d.json) with globally-unique numbers/ids. Internal
-  // numbering is unchanged by the file split (Phase 24.1).
-  group('merged repository (2D + 3D)', () {
-    test('should_load_30_manual_levels_from_assets', () async {
+  // load all 40 levels (2D 1-20 from manual_levels_2d.json, 3D 21-30 from
+  // manual_levels_3d.json, hex 31-40 from manual_levels_hex.json) with
+  // globally-unique numbers/ids. Internal numbering is unchanged by the file
+  // split (Phase 24.1) and by adding the hex file (Phase 37.4).
+  group('merged repository (2D + 3D + hex)', () {
+    test('should_load_40_manual_levels_from_assets', () async {
       final levels = await GetLocalLevelsUseCase(repository)();
 
-      expect(levels, hasLength(30));
+      expect(levels, hasLength(40));
       expect(levels.first.number, 1);
-      expect(levels.last.number, 30);
+      expect(levels.last.number, 40);
     });
 
     test('should_validate_all_manual_levels', () async {
@@ -62,11 +63,16 @@ void main() {
 
       final levels = dtos.map(mapper.toDomain).map(validator.validate).toList();
 
-      expect(levels, hasLength(30));
+      expect(levels, hasLength(40));
       expect(levels.every((level) => level.boardGraph.nodes.isNotEmpty), isTrue);
       expect(levels.every((level) => level.boardGraph.edges.isNotEmpty), isTrue);
     });
 
+    // Progressive-difficulty banding only applies within the 2D/3D range
+    // (1-30) — the hex set (31-40) has its own independent difficulty
+    // progression (easy 31-33/medium 34-37/hard 38-40, asserted separately
+    // in manual_levels_hex_test.dart), not a continuation of "everything
+    // >=11 is hard".
     test('should_have_progressive_difficulty_across_manual_levels', () async {
       final levels = await GetLocalLevelsUseCase(repository)();
 
@@ -81,7 +87,9 @@ void main() {
         everyElement('medium'),
       );
       expect(
-        levels.where((level) => level.number! >= 11).map(_difficulty),
+        levels
+            .where((level) => level.number! >= 11 && level.number! <= 30)
+            .map(_difficulty),
         everyElement('hard'),
       );
     });
@@ -90,10 +98,10 @@ void main() {
       final levels = await GetLocalLevelsUseCase(repository)();
       final numbers = levels.map((level) => level.number).toSet();
 
-      expect(numbers, hasLength(30));
+      expect(numbers, hasLength(40));
       expect(
         numbers,
-        containsAll(List<int>.generate(30, (index) => index + 1)),
+        containsAll(List<int>.generate(40, (index) => index + 1)),
       );
     });
 
@@ -101,11 +109,12 @@ void main() {
       final levels = await GetLocalLevelsUseCase(repository)();
       final ids = levels.map((level) => level.id).toSet();
 
-      expect(ids, hasLength(30));
+      expect(ids, hasLength(40));
       expect(ids, contains('manual-001'));
       expect(ids, contains('manual-020'));
       expect(ids, contains('manual-025'));
       expect(ids, contains('manual-030'));
+      expect(ids, contains('manual-040'));
     });
   });
 
@@ -218,7 +227,12 @@ void main() {
   });
 
   test('should_meet_arrow_density_bands_per_tier', () async {
-    final levels = await GetLocalLevelsUseCase(repository)();
+    // Hex levels (31-40, generationType 'hex') use their own HEX_DENSITY
+    // bands (lower, since a 6-neighbour lattice packs the same node count
+    // into fewer/longer arrows than the square 4-neighbour lattice) —
+    // asserted separately in manual_levels_hex_test.dart.
+    final levels = (await GetLocalLevelsUseCase(repository)())
+        .where((level) => level.metadata['generationType'] != 'hex');
     for (final level in levels) {
       final n = level.arrows.length;
       final tier = _difficulty(level);
@@ -397,8 +411,15 @@ void main() {
     // smaller layer's silhouette (pyramid/diamond/hourglass) is legitimate;
     // a defect is only a gap that HIDES a node further along the sweep —
     // the resolver would exit at the gap while the player sees a blocker.
-    final levels = (await GetLocalLevelsUseCase(repository)())
-        .where((level) => level.metadata['generationType'] != 'figure');
+    // Hex levels (generationType 'hex') have their own no-interior-gap-exits
+    // test in manual_levels_hex_test.dart, run against the real hex
+    // MovementResolver semantics rather than this bbox-relative square/3D
+    // check.
+    final levels = (await GetLocalLevelsUseCase(repository)()).where(
+      (level) =>
+          level.metadata['generationType'] != 'figure' &&
+          level.metadata['generationType'] != 'hex',
+    );
     for (final level in levels) {
       final is3D = level.metadata['generationType'] == '3d';
       final graph = level.boardGraph;
@@ -548,7 +569,9 @@ void main() {
   group('3D levels (21-30)', () {
     test('should_only_contain_hard_multi_layer_levels', () async {
       final levels = await GetLocalLevelsUseCase(repository)();
-      final threeD = levels.where((l) => (l.number ?? 0) >= 21).toList();
+      final threeD = levels
+          .where((l) => (l.number ?? 0) >= 21 && (l.number ?? 0) <= 30)
+          .toList();
 
       expect(threeD, hasLength(10));
       expect(threeD.map((l) => l.number).toSet(),
@@ -563,7 +586,9 @@ void main() {
 
     test('should_have_spanning_vertical_arrows_in_every_3d_level', () async {
       final levels = await GetLocalLevelsUseCase(repository)();
-      final threeD = levels.where((l) => (l.number ?? 0) >= 21);
+      final threeD = levels.where(
+        (l) => (l.number ?? 0) >= 21 && (l.number ?? 0) <= 30,
+      );
 
       for (final level in threeD) {
         final graph = level.boardGraph;

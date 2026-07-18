@@ -1,4 +1,5 @@
 import 'board_coordinate.dart';
+import 'board_topology.dart';
 import 'graph_edge.dart';
 import 'graph_node.dart';
 import 'move_direction.dart';
@@ -7,10 +8,12 @@ class BoardGraph {
   BoardGraph({
     required List<GraphNode> nodes,
     required List<GraphEdge> edges,
+    this.topology = BoardTopology.square,
   })  : _nodesById = {for (final node in nodes) node.id: node},
         _nodesByCoordinate = {for (final node in nodes) node.coordinate: node},
         _edgesById = {for (final edge in edges) edge.id: edge};
 
+  final BoardTopology topology;
   final Map<String, GraphNode> _nodesById;
   final Map<BoardCoordinate, GraphNode> _nodesByCoordinate;
   final Map<String, GraphEdge> _edgesById;
@@ -38,7 +41,11 @@ class BoardGraph {
         continue;
       }
 
-      final edgeDirection = MoveDirection.between(node.coordinate, otherNode.coordinate);
+      final edgeDirection = MoveDirection.between(
+        node.coordinate,
+        otherNode.coordinate,
+        topology: topology,
+      );
       if (edgeDirection == direction) {
         return otherNode;
       }
@@ -97,6 +104,6 @@ class BoardGraph {
               layerNodeIds.contains(edge.fromNodeId) && layerNodeIds.contains(edge.toNodeId),
         )
         .toList(growable: false);
-    return BoardGraph(nodes: layerNodes, edges: layerEdges);
+    return BoardGraph(nodes: layerNodes, edges: layerEdges, topology: topology);
   }
 }

@@ -8,6 +8,7 @@
   "challenges": "Retos",
   "gameMode2D": "2D",
   "gameMode3D": "3D",
+  "gameModeHex": "HEX",
   "gameModeHint": "Elige que conjunto de niveles abre el menu.",
   "gamePlaceholder": "Pantalla de juego provisional",
   "backendUrlLabel": "URL del backend",

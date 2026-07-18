@@ -77,20 +77,27 @@ Check every item on this list before starting any phase. Update this file when c
 - Level list order, display numbers ("Level N"), unlock, and next-level are
   ALL driven by `LevelProgression` (application), built per mode from the
   mode-filtered list and sorted by `LevelComplexityAnalyzer` score. Never
-  mix 2D and 3D levels in one progression, and never derive display numbers
-  or unlock from internal numbers in new UI — use the progression. Internal
-  numbers remain the storage/routing/leaderboard keys everywhere.
+  mix two modes in one progression (2D/3D/hex, since Phase 37.4), and never
+  derive display numbers or unlock from internal numbers in new UI — use the
+  progression. Internal numbers remain the storage/routing/leaderboard keys
+  everywhere.
 - The JSON `difficulty` field is DORMANT for display (like
   `timeLimit`/`maxMoves`): level cards show the computed tier. Don't read
   the metadata for UI without updating this note.
 - Unlock gate: `LocalProgress.isUnlockedAfter(previousInProgression)`.
   `isUnlockedForMode`/`displayNumberFor`/`hasNextLevelFor` are legacy
   fallbacks (GameScreen uses them only when the level list can't load) —
-  don't wire new features to them.
-- Analyzer tier thresholds (easy < 45, medium < 62) are calibrated against
-  the shipped 30 levels and pinned by `level_complexity_test.dart`'s
-  shipped-levels group; recalibrate BOTH together if level content or
-  weights change.
+  `isUnlockedForMode` stays 2D/3D-only (never extended to hex, since the
+  progression gate above is what actually drives hex's unlock in
+  production); don't wire new features to any of the three.
+- `LevelComplexityAnalyzer`'s tiers are RANK-RELATIVE (thirds of each mode's
+  own sorted progression — see `LevelProgression._tierForRank`), not
+  absolute score thresholds. There is no fixed cutoff to keep calibrated: any
+  mode with 3+ levels spreads across easy/medium/hard by construction,
+  regardless of the composite score's absolute scale (confirmed for hex in
+  Phase 37.4 — a 6-neighbour board's scores don't need separate tuning for
+  exactly this reason). `level_complexity_test.dart`'s shipped-levels group
+  asserts the SPREAD (`ComplexityTier.values.toSet()`), not specific numbers.
 - Widget tests mounting `GameScreen` must inject `loadLevels` (a fake list
   for progression behavior, or a throwing loader for the fallback) — the
   real-asset default is nondeterministic under flutter_test.

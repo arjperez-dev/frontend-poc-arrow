@@ -1,6 +1,7 @@
 import 'arrow_path.dart';
 import 'board_coordinate.dart';
 import 'board_graph.dart';
+import 'board_topology.dart';
 import 'graph_edge.dart';
 import 'graph_node.dart';
 import 'level.dart';
@@ -23,6 +24,8 @@ class LevelDefinitionValidator {
     if (definition.metadata.isEmpty) {
       throw const LevelDefinitionException('Level metadata is required.');
     }
+
+    final topology = _topologyOf(definition);
 
     final nodeIds = <String>{};
     for (final node in definition.nodes) {
@@ -55,9 +58,12 @@ class LevelDefinitionValidator {
       final direction = MoveDirection.between(
         fromNode.coordinate,
         toNode.coordinate,
+        topology: topology,
       );
       if (direction == null) {
-        throw LevelDefinitionException('Edge ${edge.id} must be orthogonal.');
+        throw LevelDefinitionException(
+          'Edge ${edge.id} must connect lattice-adjacent nodes.',
+        );
       }
       edges.add(
         GraphEdge(
@@ -233,10 +239,22 @@ class LevelDefinitionValidator {
       boardGraph: BoardGraph(
         nodes: nodesById.values.toList(growable: false),
         edges: edges,
+        topology: topology,
       ),
       arrows: arrows,
       metadata: definition.metadata,
     );
+  }
+
+  static BoardTopology _topologyOf(LevelDefinition definition) {
+    final value = definition.metadata['topology'];
+    if (value == null || value == 'square') {
+      return BoardTopology.square;
+    }
+    if (value == 'hex') {
+      return BoardTopology.hex;
+    }
+    throw LevelDefinitionException('Unknown topology metadata value "$value".');
   }
 
   static List<String> _deriveOrderedNodeIds({
