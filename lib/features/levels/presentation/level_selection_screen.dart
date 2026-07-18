@@ -134,10 +134,7 @@ class _LevelSelectionScreenState extends State<LevelSelectionScreen> {
             // never share a sorting pipeline. Display numbers, unlock order,
             // and list order all follow the progression (easiest → hardest).
             final progression = LevelProgression.fromLevels(
-              filterLevelsByGameMode(
-                screenData.levels,
-                wantThreeD: gameMode == GameMode.threeD,
-              ),
+              filterLevelsByGameMode(screenData.levels, mode: gameMode),
             );
             final entries = progression.entries;
             final progress = screenData.progress;

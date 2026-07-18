@@ -59,7 +59,7 @@ class _LeaderboardLevelPickerScreenState
             final progression = LevelProgression.fromLevels(
               filterLevelsByGameMode(
                 snapshot.data ?? const <Level>[],
-                wantThreeD: gameMode == GameMode.threeD,
+                mode: gameMode,
               ),
             );
             final levels = progression.levels;

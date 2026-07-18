@@ -63,6 +63,7 @@ flutter:
   assets:
     - assets/levels/manual_levels_2d.json
     - assets/levels/manual_levels_3d.json
+    - assets/levels/manual_levels_hex.json
     - assets/audio/
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg

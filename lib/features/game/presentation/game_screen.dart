@@ -19,6 +19,8 @@ import 'game_ui_keys.dart';
 import 'level_mode_filter.dart';
 import 'widgets/graph_board.dart';
 import 'widgets/graph_3d_board.dart';
+import 'widgets/hex_board.dart';
+import '../domain/board_topology.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -168,7 +170,7 @@ class _GameScreenState extends State<GameScreen> {
       final allLevels = await loadLevels();
       final sameModeLevels = filterLevelsByGameMode(
         allLevels,
-        wantThreeD: isThreeDLevel(level),
+        mode: modeOfLevel(level),
       );
       if (!mounted) {
         return;
@@ -231,9 +233,15 @@ class _GameScreenState extends State<GameScreen> {
         animation: controller,
         builder: (context, _) {
           final localizations = AppLocalizations.of(context);
-          final gameMode =
-              AppSettingsScope.maybeOf(context)?.gameMode ?? GameMode.twoD;
           final internalNumber = controller.level?.number;
+          // The arithmetic fallback needs the PLAYED level's own mode, not
+          // the app-wide settings mode — those can disagree (e.g. a
+          // leaderboard/challenge deep-link opens a level while the home
+          // toggle is still set to a different mode). Fall back to settings
+          // only before the level itself has loaded.
+          final gameMode = controller.level != null
+              ? modeOfLevel(controller.level!)
+              : AppSettingsScope.maybeOf(context)?.gameMode ?? GameMode.twoD;
           final progression = _progression;
           // The progression drives display number and next level only when
           // it actually contains the played level; otherwise (not loaded,
@@ -396,6 +404,15 @@ class _GameReadyView extends StatelessWidget {
               Graph3DBoard(
                 session: session,
                 lastActivatedArrowId: controller.lastActivatedArrowId,
+                flashingArrowId: controller.flashingArrowId,
+                animate: animateBoard,
+                onArrowActivated: controller.activateArrow,
+                onInteractionActiveChanged: onBoardInteractionActiveChanged,
+              )
+            else if (level.boardGraph.topology == BoardTopology.hex)
+              HexBoard(
+                session: session,
+                lastActivatedArrowId: null,
                 flashingArrowId: controller.flashingArrowId,
                 animate: animateBoard,
                 onArrowActivated: controller.activateArrow,

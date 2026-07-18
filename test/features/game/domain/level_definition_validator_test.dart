@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:frontend_poc_arrow/features/game/domain/board_topology.dart';
 import 'package:frontend_poc_arrow/features/game/domain/direction.dart';
+import 'package:frontend_poc_arrow/features/game/domain/hex_direction.dart';
 import 'package:frontend_poc_arrow/features/game/domain/level_definition.dart';
 import 'package:frontend_poc_arrow/features/game/domain/level_definition_validator.dart';
 
@@ -276,6 +278,79 @@ void main() {
           direction: Direction.right,
         ),
       ],
+      blockedEdgeIds: const [],
+      metadata: const {'difficulty': 'test'},
+    );
+
+    expect(
+      () => LevelDefinitionValidator().validate(definition),
+      throwsA(isA<LevelDefinitionException>()),
+    );
+  });
+
+  test('should_accept_hex_level_with_six_direction_adjacency', () {
+    final level = buildLevel(hexDefinition());
+
+    expect(level.boardGraph.topology, BoardTopology.hex);
+    expect(level.boardGraph.getNeighbor('centre', HexDirection.east)?.id, 'east');
+    expect(
+      level.boardGraph.getNeighbor('centre', HexDirection.northEast)?.id,
+      'northEast',
+    );
+    expect(
+      level.boardGraph.getNeighbor('centre', HexDirection.southWest)?.id,
+      'southWest',
+    );
+  });
+
+  test('should_reject_hex_edge_between_non_adjacent_axial_nodes', () {
+    final definition = LevelDefinition(
+      id: 'hex-non-adjacent',
+      name: 'Hex Non Adjacent',
+      nodes: const [
+        GraphNodeDefinition(id: 'centre', x: 0, y: 0),
+        GraphNodeDefinition(id: 'far', x: 2, y: 0),
+      ],
+      edges: const [
+        GraphEdgeDefinition(id: 'centre-far', fromNodeId: 'centre', toNodeId: 'far'),
+      ],
+      arrows: const [],
+      blockedEdgeIds: const [],
+      metadata: const {'difficulty': 'test', 'topology': 'hex'},
+    );
+
+    expect(
+      () => LevelDefinitionValidator().validate(definition),
+      throwsA(isA<LevelDefinitionException>()),
+    );
+  });
+
+  test('should_reject_unknown_topology_metadata_value', () {
+    final definition = hexDefinition(
+      metadata: const {'difficulty': 'test', 'topology': 'triangle'},
+    );
+
+    expect(
+      () => LevelDefinitionValidator().validate(definition),
+      throwsA(isA<LevelDefinitionException>()),
+    );
+  });
+
+  // A hex delta (northEast: dx=1, dy=-1) is a diagonal on the square lattice
+  // and must stay rejected there — guards against hex directions leaking
+  // into the square registry via a shared/merged direction list.
+  test('should_still_reject_diagonal_edge_on_square_level', () {
+    final definition = LevelDefinition(
+      id: 'square-diagonal',
+      name: 'Square Diagonal',
+      nodes: const [
+        GraphNodeDefinition(id: 'a', x: 0, y: 0),
+        GraphNodeDefinition(id: 'b', x: 1, y: -1),
+      ],
+      edges: const [
+        GraphEdgeDefinition(id: 'ab', fromNodeId: 'a', toNodeId: 'b'),
+      ],
+      arrows: const [],
       blockedEdgeIds: const [],
       metadata: const {'difficulty': 'test'},
     );

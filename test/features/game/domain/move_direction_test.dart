@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend_poc_arrow/features/game/domain/board_coordinate.dart';
+import 'package:frontend_poc_arrow/features/game/domain/board_topology.dart';
 import 'package:frontend_poc_arrow/features/game/domain/direction.dart';
+import 'package:frontend_poc_arrow/features/game/domain/hex_direction.dart';
 import 'package:frontend_poc_arrow/features/game/domain/layer_direction.dart';
 import 'package:frontend_poc_arrow/features/game/domain/move_direction.dart';
 
@@ -77,6 +79,55 @@ void main() {
 
     test('should_throw_format_exception_for_unknown_name', () {
       expect(() => MoveDirection.parse('diagonal'), throwsFormatException);
+    });
+  });
+
+  group('topology-scoped resolution (audit §2 regression proof)', () {
+    test('should_resolve_east_not_right_when_topology_is_hex', () {
+      const a = BoardCoordinate(x: 0, y: 0);
+      const b = BoardCoordinate(x: 1, y: 0);
+
+      final resolved = MoveDirection.between(a, b, topology: BoardTopology.hex);
+
+      expect(resolved, HexDirection.east);
+      expect(resolved, isNot(Direction.right));
+    });
+
+    test('should_resolve_right_not_east_when_topology_is_square', () {
+      const a = BoardCoordinate(x: 0, y: 0);
+      const b = BoardCoordinate(x: 1, y: 0);
+
+      final resolved = MoveDirection.between(a, b, topology: BoardTopology.square);
+
+      expect(resolved, Direction.right);
+      expect(resolved, isNot(HexDirection.east));
+    });
+
+    test('should_return_null_for_hex_diagonal_delta_when_topology_is_square', () {
+      const a = BoardCoordinate(x: 0, y: 0);
+      const hexNorthEast = BoardCoordinate(x: 1, y: -1);
+
+      expect(
+        MoveDirection.between(a, hexNorthEast, topology: BoardTopology.square),
+        isNull,
+      );
+    });
+
+    test('should_resolve_north_east_when_topology_is_hex', () {
+      const a = BoardCoordinate(x: 0, y: 0);
+      const b = BoardCoordinate(x: 1, y: -1);
+
+      expect(
+        MoveDirection.between(a, b, topology: BoardTopology.hex),
+        HexDirection.northEast,
+      );
+    });
+
+    test('should_reject_hex_direction_name_when_topology_is_square', () {
+      expect(
+        () => MoveDirection.parse('east', topology: BoardTopology.square),
+        throwsFormatException,
+      );
     });
   });
 }

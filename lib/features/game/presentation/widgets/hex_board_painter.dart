@@ -1,13 +1,42 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../domain/arrow_path.dart';
 import '../../domain/game_session.dart';
+import '../../domain/hex_direction.dart';
+import '../../domain/move_direction.dart';
 import 'board_painter_helpers.dart';
 import 'board_style.dart';
-import 'graph_board_layout.dart';
+import 'hex_board_layout.dart';
 
-class GraphBoardPainter extends CustomPainter {
-  const GraphBoardPainter({
+/// Screen-space angle (y-down) per [HexDirection], for arrowhead rotation.
+/// Not derivable from the axial (dx, dy) delta the way the square board's
+/// [defaultAngleFor] is — axial deltas don't line up with pixel angles once
+/// mapped through the pointy-top projection — so this is an explicit table.
+double hexAngleFor(MoveDirection direction) {
+  if (direction is! HexDirection) {
+    return defaultAngleFor(direction);
+  }
+  switch (direction) {
+    case HexDirection.east:
+      return 0;
+    case HexDirection.southEast:
+      return math.pi / 3;
+    case HexDirection.southWest:
+      return 2 * math.pi / 3;
+    case HexDirection.west:
+      return math.pi;
+    case HexDirection.northWest:
+      return 4 * math.pi / 3;
+    case HexDirection.northEast:
+      return 5 * math.pi / 3;
+  }
+}
+
+class HexBoardPainter extends CustomPainter {
+  const HexBoardPainter({
     required this.session,
     this.lastActivatedArrowId,
     this.flashingArrowId,
@@ -18,42 +47,45 @@ class GraphBoardPainter extends CustomPainter {
   });
 
   final GameSession session;
-
-  /// Arrow drawn slightly thicker (activated this tap).
   final String? lastActivatedArrowId;
-
-  /// Arrow drawn in collision-error colour for the flash duration.
   final String? flashingArrowId;
-
-  /// Arrow currently sliding out of the board (already escaped in the model).
   final ArrowPath? exitingArrow;
-
-  /// 0..1 progress of the exit slide animation.
   final double exitProgress;
-
-  /// Arrow currently playing a collision shake.
   final String? shakeArrowId;
-
-  /// 0..1 progress of the shake animation.
   final double shakeProgress;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final layout = GraphBoardLayout.fromGraph(
+    final layout = HexBoardLayout.fromGraph(
       graph: session.level.boardGraph,
       size: size,
     );
     final graph = session.level.boardGraph;
 
     paintBoardBackground(canvas, size);
+
+    final hexOutlinePaint = Paint()
+      ..color = AppTheme.mutedText.withValues(alpha: 0.14)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    for (final node in graph.nodes) {
+      final position = layout.positionOf(node.id);
+      if (position == null) continue;
+      final vertices = layout.hexVertices(position);
+      final path = Path()..moveTo(vertices[0].dx, vertices[0].dy);
+      for (final v in vertices.skip(1)) {
+        path.lineTo(v.dx, v.dy);
+      }
+      path.close();
+      canvas.drawPath(path, hexOutlinePaint);
+    }
+
     paintGraphEdges(canvas, layout, graph);
 
     for (final arrow in session.activeArrows) {
-      _drawArrow(canvas, layout, arrow, size);
+      _drawArrow(canvas, layout, arrow);
     }
 
-    // Slide-out animation for the arrow that just escaped (drawn over the graph;
-    // it is no longer in activeArrows).
     final exiting = exitingArrow;
     if (exiting != null && exitProgress > 0 && exitProgress < 1) {
       paintExitingArrow(
@@ -63,7 +95,7 @@ class GraphBoardPainter extends CustomPainter {
         size,
         exitProgress,
         arrowColorFor(exiting.id),
-        defaultAngleFor,
+        hexAngleFor,
       );
     }
 
@@ -74,19 +106,14 @@ class GraphBoardPainter extends CustomPainter {
     paintCoveredAndFreeNodes(canvas, layout, graph, coveredNodeIds);
   }
 
-  void _drawArrow(
-    Canvas canvas,
-    GraphBoardLayout layout,
-    ArrowPath arrow,
-    Size size,
-  ) {
+  void _drawArrow(Canvas canvas, HexBoardLayout layout, ArrowPath arrow) {
     final isFlashing = arrow.id == flashingArrowId;
     final color = isFlashing ? collisionFlashColor : arrowColorFor(arrow.id);
     final offset = shakeOffsetFor(
       arrow,
       shakeArrowId,
       shakeProgress,
-      defaultAngleFor,
+      hexAngleFor,
     );
     paintArrowShape(
       canvas,
@@ -96,12 +123,12 @@ class GraphBoardPainter extends CustomPainter {
       1,
       offset,
       emphasized: arrow.id == lastActivatedArrowId,
-      angleFor: defaultAngleFor,
+      angleFor: hexAngleFor,
     );
   }
 
   @override
-  bool shouldRepaint(covariant GraphBoardPainter oldDelegate) {
+  bool shouldRepaint(covariant HexBoardPainter oldDelegate) {
     return oldDelegate.session != session ||
         oldDelegate.lastActivatedArrowId != lastActivatedArrowId ||
         oldDelegate.flashingArrowId != flashingArrowId ||

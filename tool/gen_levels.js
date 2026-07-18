@@ -5,18 +5,23 @@
 // 1-20 live in manual_levels_2d.json, 3D levels 21-25 in manual_levels_3d.json.
 //
 //   node tool/gen_levels.js --validate-only   (default, no args)
-//       Reads both asset files, runs all checks on each independently. Never writes.
+//       Reads all asset files (2D + 3D always; hex too if present), runs all
+//       checks on each independently. Never writes.
 //
 //   node tool/gen_levels.js --generate-2d
 //       Generates levels 1-15 (random) + 16-20 (figures), validates as the 2D
 //       set, writes manual_levels_2d.json.
 //
 //   node tool/gen_levels.js --generate-3d
-//       Generates levels 21-25 (hand-designed), validates as the 3D set,
+//       Generates levels 21-30 (hand-designed), validates as the 3D set,
 //       writes manual_levels_3d.json.
 //
+//   node tool/gen_levels.js --generate-hex
+//       Generates hex-topology levels 31-40, validates as the hex set,
+//       writes manual_levels_hex.json. See LEVEL_AUTHORING.md §18.
+//
 //   node tool/gen_levels.js --generate
-//       Shorthand: runs --generate-2d then --generate-3d.
+//       Shorthand: runs --generate-2d then --generate-3d (never --generate-hex).
 //
 // Generation algorithm (sparse graph + DFS partition):
 //   1. Define a W×H node grid (coordinate-based adjacency, NO edges upfront).
@@ -46,6 +51,7 @@ const path = require('path');
 
 const ASSET_2D = path.join(__dirname, '..', 'assets', 'levels', 'manual_levels_2d.json');
 const ASSET_3D = path.join(__dirname, '..', 'assets', 'levels', 'manual_levels_3d.json');
+const ASSET_HEX = path.join(__dirname, '..', 'assets', 'levels', 'manual_levels_hex.json');
 // Per-tier retry budgets. Hard gets a large budget so the random partition
 // algorithm finds a valid varied level without falling back to a deterministic
 // layout. This is a build-time tool — spending a few seconds per hard level
@@ -77,15 +83,73 @@ function dirBetween(a, b) {
   return null;
 }
 // Unit steps as [dx, dy, dz]. above/below are the z-layer axis (3D levels).
+// east/northEast/northWest/west/southWest/southEast are the pointy-top axial
+// hex directions — MUST mirror lib/features/game/domain/hex_direction.dart's
+// HexDirection deltas literally (a drift here is the single most likely
+// source of "validates in JS, throws in Dart"). Safe to key into the same
+// object as the square directions: this is a NAME-keyed lookup, not the
+// Dart delta-keyed MoveDirection.between() resolution — hex names never
+// collide with square names as strings, even though 4 of the 6 hex deltas
+// are numerically identical to 4 square deltas.
 const DELTA = {
   right: [1, 0, 0], left: [-1, 0, 0], down: [0, 1, 0], up: [0, -1, 0],
   above: [0, 0, -1], below: [0, 0, 1],
+  east: [1, 0, 0], northEast: [1, -1, 0], northWest: [0, -1, 0],
+  west: [-1, 0, 0], southWest: [-1, 1, 0], southEast: [0, 1, 0],
+};
+// Hex-only subset of DELTA, for hex-specific adjacency/partition logic.
+const HEX_DELTA = {
+  east: DELTA.east, northEast: DELTA.northEast, northWest: DELTA.northWest,
+  west: DELTA.west, southWest: DELTA.southWest, southEast: DELTA.southEast,
 };
 const H_DIRS = ['right', 'left']; // horizontal directions
 
 function parseCoord(id) {
   const m = id.match(/^n(-?\d+)_(-?\d+)$/);
   return { x: parseInt(m[1], 10), y: parseInt(m[2], 10) };
+}
+
+// Hex counterpart of dirBetween: the unit hex direction from a to b (axial,
+// z ignored — hex boards are planar-only), or null if not lattice-adjacent.
+function hexDirBetween(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  for (const name in HEX_DELTA) {
+    const [ddx, ddy] = HEX_DELTA[name];
+    if (dx === ddx && dy === ddy) return name;
+  }
+  return null;
+}
+
+// Hex counterpart of coordAdj: axial neighbours of `id` that exist in `nodes`.
+function hexNeighbors(id, nodes) {
+  const { x, y } = nodes.get(id);
+  const nbs = [];
+  for (const name in HEX_DELTA) {
+    const [dx, dy] = HEX_DELTA[name];
+    const nb = nid(x + dx, y + dy);
+    if (nodes.has(nb)) nbs.push(nb);
+  }
+  return nbs;
+}
+
+// BFS connectivity over hex axial adjacency (mirrors coordBfsComponents).
+function hexBfsComponents(nodes) {
+  if (nodes.size === 0) return 0;
+  const seen = new Set();
+  let comps = 0;
+  for (const start of nodes.keys()) {
+    if (seen.has(start)) continue;
+    comps++;
+    const stack = [start];
+    seen.add(start);
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const nb of hexNeighbors(cur, nodes)) {
+        if (!seen.has(nb)) { seen.add(nb); stack.push(nb); }
+      }
+    }
+  }
+  return comps;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +300,93 @@ function coordAdj(id, nodes) {
     if (nodes.has(nb)) nbs.push(nb);
   }
   return nbs;
+}
+
+// ---------------------------------------------------------------------------
+// Hex node sets (levels 31-40) — axial (q, r) coordinates stored directly in
+// x/y (mirrors the Dart HexDirection convention: no cube-coordinate type).
+// ---------------------------------------------------------------------------
+
+// Regular hexagon of axial cells within cube-distance <= radius of the
+// origin. Cube distance for axial (q,r) is max(|q|,|r|,|q+r|).
+function hexRingMask(radius) {
+  const nodes = new Map();
+  for (let q = -radius; q <= radius; q++) {
+    for (let r = -radius; r <= radius; r++) {
+      const s = -q - r;
+      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= radius) {
+        nodes.set(nid(q, r), { x: q, y: r });
+      }
+    }
+  }
+  return nodes;
+}
+
+// Regular hexagon with a fraction of its outer-ring (distance === radius)
+// cells randomly removed, each removal BFS-checked for hex connectivity —
+// mirrors makeNodeSet's square boundary-removal for irregular silhouettes.
+function hexRingMaskIrregular(radius, rng, removalFraction) {
+  const nodes = hexRingMask(radius);
+  const outerRing = rng.shuffle(
+    [...nodes.keys()].filter(id => {
+      const { x: q, y: r } = nodes.get(id);
+      const s = -q - r;
+      return Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) === radius;
+    })
+  );
+  const target = Math.floor(outerRing.length * removalFraction);
+  let removed = 0;
+  for (const id of outerRing) {
+    if (removed >= target) break;
+    nodes.delete(id);
+    if (hexBfsComponents(nodes) !== 1) nodes.set(id, parseCoord(id));
+    else removed++;
+  }
+  return nodes;
+}
+
+// Elongated "stadium" silhouette: two regular hexagons of `radius`, their
+// centres offset along the east/west axis by `stretch` cells, unioned. Reads
+// as a stretched hex rather than a single regular one — the second irregular
+// hard-tier shape (variety alongside the boundary-removed ring above).
+function hexStadiumMask(radius, stretch) {
+  const nodes = new Map();
+  for (const cx of [-stretch, stretch]) {
+    for (let q = -radius; q <= radius; q++) {
+      for (let r = -radius; r <= radius; r++) {
+        const s = -q - r;
+        if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= radius) {
+          const id = nid(q + cx, r);
+          if (!nodes.has(id)) nodes.set(id, { x: q + cx, y: r });
+        }
+      }
+    }
+  }
+  return keepLargestComponentHex(nodes);
+}
+
+// Hex counterpart of keepLargestComponent (defined below, alongside the
+// square figure-mask helpers it mirrors) — kept only the largest hex-
+// connected component, in case a union mask pinches off a stray cell.
+function keepLargestComponentHex(nodes) {
+  const seen = new Set();
+  let best = [];
+  for (const startId of nodes.keys()) {
+    if (seen.has(startId)) continue;
+    const comp = [startId];
+    seen.add(startId);
+    const stack = [startId];
+    while (stack.length) {
+      const curId = stack.pop();
+      for (const nb of hexNeighbors(curId, nodes)) {
+        if (!seen.has(nb)) { seen.add(nb); stack.push(nb); comp.push(nb); }
+      }
+    }
+    if (comp.length > best.length) best = comp;
+  }
+  const result = new Map();
+  for (const id of best) result.set(id, nodes.get(id));
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -444,6 +595,139 @@ function mergeSingleton(id, paths, nodes) {
   }
   // Worst case: keep as singleton (coverage check will fail → retry).
   paths.push({ nodeIds: [id], dir: null });
+}
+
+// ---------------------------------------------------------------------------
+// Hex path partition (levels 31-40) — same most-constrained-first DFS as
+// partitionNodes, over hexNeighbors (6-neighbourhoods) instead of coordAdj
+// (4-neighbourhoods). A literal parallel copy rather than a parameterised
+// partitionNodes, matching the audit's "add a parallel path, do not
+// generalise the existing builders in place" precedent.
+// ---------------------------------------------------------------------------
+function hexFinalDir(path, nodes) {
+  if (path.length < 2) return null;
+  return hexDirBetween(nodes.get(path[path.length - 2]), nodes.get(path[path.length - 1]));
+}
+
+function hexMergeSingleton(id, paths, nodes) {
+  for (const nb of hexNeighbors(id, nodes)) {
+    for (const p of paths) {
+      if (p.nodeIds[0] === nb) { p.nodeIds.unshift(id); return; }
+    }
+  }
+  for (const nb of hexNeighbors(id, nodes)) {
+    for (const p of paths) {
+      if (p.nodeIds[p.nodeIds.length - 1] === nb) {
+        p.nodeIds.push(id);
+        p.dir = hexFinalDir(p.nodeIds, nodes);
+        return;
+      }
+    }
+  }
+  paths.push({ nodeIds: [id], dir: null });
+}
+
+function partitionNodesHex(nodes, rng, maxPathLen) {
+  const unvisited = new Set(nodes.keys());
+  const paths = [];
+
+  while (unvisited.size > 0) {
+    let startId = null, bestDeg = Infinity;
+    for (const id of unvisited) {
+      const deg = hexNeighbors(id, nodes).filter(nb => unvisited.has(nb)).length;
+      if (deg < bestDeg) { bestDeg = deg; startId = id; }
+    }
+
+    unvisited.delete(startId);
+    const path = [startId];
+    let cur = startId;
+
+    while (path.length < maxPathLen) {
+      const allCands = rng.shuffle(hexNeighbors(cur, nodes).filter(nb => unvisited.has(nb)));
+      if (!allCands.length) break;
+      path.push(allCands[0]);
+      unvisited.delete(allCands[0]);
+      cur = allCands[0];
+    }
+
+    if (path.length >= 2) {
+      paths.push({ nodeIds: path, dir: hexFinalDir(path, nodes) });
+    } else {
+      hexMergeSingleton(path[0], paths, nodes);
+    }
+  }
+
+  return paths;
+}
+
+// ---------------------------------------------------------------------------
+// BuilderHex (levels 31-40) — hex counterpart of Builder. A parallel path,
+// not a generalisation of Builder in place (same precedent as Builder3D).
+// ---------------------------------------------------------------------------
+function BuilderHex(number, name, difficulty) {
+  return {
+    number, name, difficulty,
+    _nodes: new Map(), _edges: new Map(), _arrows: [], _seq: 0,
+    addNode(q, r) {
+      const id = nid(q, r);
+      if (!this._nodes.has(id)) this._nodes.set(id, { x: q, y: r });
+      return id;
+    },
+    addEdge(a, b) {
+      if (!this._edges.has(eid(a, b)) && !this._edges.has(eid(b, a)))
+        this._edges.set(eid(a, b), { from: a, to: b });
+    },
+    edgeBetween(a, b) {
+      if (this._edges.has(eid(a, b))) return eid(a, b);
+      if (this._edges.has(eid(b, a))) return eid(b, a);
+      return null;
+    },
+    arrowOverCells(cells, direction) {
+      const ids = cells.map(([q, r]) => this.addNode(q, r));
+      for (let i = 0; i < ids.length - 1; i++) this.addEdge(ids[i], ids[i + 1]);
+      const occ = [];
+      for (let i = 0; i < ids.length - 1; i++) occ.push(this.edgeBetween(ids[i], ids[i + 1]));
+      this._arrows.push({
+        id: 'a' + (++this._seq),
+        occupiedEdges: occ,
+        startNodeId: ids[0],
+        endNodeId: ids[ids.length - 1],
+        direction,
+      });
+    },
+    // Connectivity weave along the northWest/southEast and northEast/
+    // southWest axes (never the east/west axis most arrows sweep along),
+    // so weave edges rarely extend an arrow's own sweep — same role as
+    // Builder.weave()/weaveH() for the square tiers.
+    weaveHex() {
+      for (const [id, p] of this._nodes) {
+        for (const name2 of ['northWest', 'northEast']) {
+          const [dx, dy] = HEX_DELTA[name2];
+          const nb = nid(p.x + dx, p.y + dy);
+          if (this._nodes.has(nb)) this.addEdge(id, nb);
+        }
+      }
+    },
+    build(meta) {
+      const nm = this._nodes;
+      return {
+        number, name, difficulty,
+        definitionJson: {
+          nodes: [...nm.entries()].map(([id, p]) => ({ id, x: p.x, y: p.y })),
+          edges: [...this._edges.entries()].map(([id, e]) => ({
+            id, fromNodeId: e.from, toNodeId: e.to,
+            direction: hexDirBetween(nm.get(e.from), nm.get(e.to)),
+          })),
+          arrows: this._arrows.map(a => ({ ...a })),
+          blockedEdges: [],
+          metadata: {
+            difficulty, timeLimit: meta.t, maxMoves: meta.m,
+            generationType: 'hex', topology: 'hex', seed: null,
+          },
+        },
+      };
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -734,6 +1018,119 @@ const FIGURE_LEVEL_DEFS = [
 function buildFigureLevels() {
   return FIGURE_LEVEL_DEFS.map(d => generateFigureLevel(
     d.number, d.name, d.meta, d.seed, d.nodeSetFactory, d.maxPathLen, d.band
+  ));
+}
+
+// ---------------------------------------------------------------------------
+// Hex levels 31-40 — hexagonal-topology boards. Node sets come from
+// hexRingMask (regular hexagon) or the two irregular masks (boundary-removed
+// ring, stretched stadium), analogous to how figure levels 16-20 use a fixed
+// nodeSetFactory instead of a random rectangle. Reuses hasRealInteriorGapExit/
+// hasSelfIntersectingArrow/connectedComponents/solvableGreedy unchanged — all
+// four are already generic over DELTA[direction] and coordinates, needing no
+// hex-specific variant (see the Phase 37.2 pre-implementation audit).
+// ---------------------------------------------------------------------------
+const HEX_MAX_RETRIES = 20000;
+// Empirically tuned against this file's own generator output (Phase 37.2):
+// a hex node has 6 neighbours vs. a square node's 4, so a hex board of the
+// same node count packs into fewer, longer arrows under the same maxPathLen
+// — the observed easy/medium/hard averages (radius 2/3/4-5, maxPathLen
+// 2-4) were arrows≈6-9 / 11-21 / 17-23, well below the square DENSITY
+// bands for a comparable node count. Bands set with headroom around those
+// observed values rather than reused from DENSITY.
+const HEX_DENSITY = {
+  easy:   { min: 5,  max: 11 },
+  medium: { min: 10, max: 24 },
+  hard:   { min: 15, max: 30, warn: 26 },
+};
+
+function generateHexLevel(number, name, difficulty, meta, seed, nodeSetFactory, maxPathLen, band) {
+  const reject = { coverage: 0, density: 0, noBent: 0, disconnected: 0,
+    gapExit: 0, selfIntersect: 0, directionVariety: 0, unsolvable: 0 };
+  for (let attempt = 0; attempt < HEX_MAX_RETRIES; attempt++) {
+    const rng = makePRNG(seed + attempt * 97);
+    const nodeSet = nodeSetFactory(rng);
+    const totalNodes = nodeSet.size;
+
+    const paths = partitionNodesHex(nodeSet, rng, maxPathLen);
+
+    const covered = new Set(paths.flatMap(p => p.nodeIds));
+    if (covered.size !== totalNodes) { reject.coverage++; continue; }
+    if (paths.some(p => p.nodeIds.length < 2)) { reject.coverage++; continue; }
+
+    const b = BuilderHex(number, name, difficulty);
+    for (const { nodeIds, dir } of paths) {
+      b.arrowOverCells(nodeIds.map(id => {
+        const { x, y } = nodeSet.get(id); return [x, y];
+      }), dir);
+    }
+    b.weaveHex();
+    const level = b.build(meta);
+    const dj = level.definitionJson;
+
+    const n = dj.arrows.length;
+    if (n < band.min || n > band.max) { reject.density++; continue; }
+    if (!dj.arrows.some(a => a.occupiedEdges.length >= 2)) { reject.noBent++; continue; }
+    if (connectedComponents(dj) !== 1) { reject.disconnected++; continue; }
+
+    // hasRealInteriorGapExit (not the blanket hasInteriorGapExit) because a
+    // hex silhouette's bounding box has empty corners by construction (a
+    // hexagon isn't a rectangle) — those are legitimate concavities, exactly
+    // like the figure-level 16-20 rationale. It is generic over any
+    // DELTA-registered direction set, so it needs no hex-specific variant.
+    if (hasRealInteriorGapExit(dj)) { reject.gapExit++; continue; }
+    if (hasSelfIntersectingArrow(dj)) { reject.selfIntersect++; continue; }
+
+    // Direction variety: require at least 3 of the 6 hex directions present
+    // (softer than the figure tier's "all directions" rule — a single hex
+    // level's silhouette is much smaller than a figure's), cap any one
+    // direction at 50%. "All six directions across the set" is verified at
+    // the Dart asset-test level over all 10 levels combined, not per-level.
+    const dirCounts = {};
+    for (const a of dj.arrows) dirCounts[a.direction] = (dirCounts[a.direction] || 0) + 1;
+    const distinctDirs = Object.keys(dirCounts).length;
+    const maxDirFrac = Math.max(...Object.values(dirCounts)) / n;
+    if (distinctDirs < 3 || maxDirFrac > 0.5) { reject.directionVariety++; continue; }
+
+    if (!solvableGreedy(dj)) { reject.unsolvable++; continue; }
+
+    console.log(`  #${number} attempt ${attempt + 1}: ${n} arrows, ${totalNodes} nodes, dirs=${JSON.stringify(dirCounts)}`);
+    return level;
+  }
+
+  throw new Error(
+    `Hex level #${number} '${name}' (${difficulty}): exhausted all ${HEX_MAX_RETRIES} retries ` +
+    `without finding a valid level. Rejection breakdown: ${JSON.stringify(reject)}. ` +
+    `Tune the shape mask, band, or maxPathLen.`
+  );
+}
+
+const HEX_LEVEL_DEFS = [
+  { number: 31, name: 'Level 31', difficulty: 'easy', meta: { t: 90, m: 30 }, seed: 310031,
+    nodeSetFactory: () => hexRingMask(2), maxPathLen: 3, band: HEX_DENSITY.easy },
+  { number: 32, name: 'Level 32', difficulty: 'easy', meta: { t: 90, m: 33 }, seed: 320032,
+    nodeSetFactory: () => hexRingMask(2), maxPathLen: 3, band: HEX_DENSITY.easy },
+  { number: 33, name: 'Level 33', difficulty: 'easy', meta: { t: 85, m: 36 }, seed: 330033,
+    nodeSetFactory: () => hexRingMask(3), maxPathLen: 4, band: HEX_DENSITY.easy },
+  { number: 34, name: 'Level 34', difficulty: 'medium', meta: { t: 80, m: 48 }, seed: 340034,
+    nodeSetFactory: () => hexRingMask(3), maxPathLen: 3, band: HEX_DENSITY.medium },
+  { number: 35, name: 'Level 35', difficulty: 'medium', meta: { t: 75, m: 54 }, seed: 350035,
+    nodeSetFactory: () => hexRingMask(4), maxPathLen: 4, band: HEX_DENSITY.medium },
+  { number: 36, name: 'Level 36', difficulty: 'medium', meta: { t: 75, m: 60 }, seed: 360036,
+    nodeSetFactory: () => hexRingMask(4), maxPathLen: 4, band: HEX_DENSITY.medium },
+  { number: 37, name: 'Level 37', difficulty: 'medium', meta: { t: 70, m: 66 }, seed: 370037,
+    nodeSetFactory: () => hexRingMask(4), maxPathLen: 3, band: HEX_DENSITY.medium },
+  { number: 38, name: 'Level 38', difficulty: 'hard', meta: { t: 65, m: 84 }, seed: 380038,
+    nodeSetFactory: rng => hexRingMaskIrregular(5, rng, 0.15), maxPathLen: 4, band: HEX_DENSITY.hard },
+  { number: 39, name: 'Level 39', difficulty: 'hard', meta: { t: 60, m: 96 }, seed: 390039,
+    nodeSetFactory: rng => hexRingMaskIrregular(5, rng, 0.22), maxPathLen: 4, band: HEX_DENSITY.hard },
+  { number: 40, name: 'Level 40', difficulty: 'hard', meta: { t: 60, m: 108 }, seed: 400040,
+    nodeSetFactory: () => hexStadiumMask(3, 2), maxPathLen: 4, band: HEX_DENSITY.hard },
+];
+
+function buildHexLevels() {
+  return HEX_LEVEL_DEFS.map(d => generateHexLevel(
+    d.number, d.name, d.difficulty, d.meta, d.seed, d.nodeSetFactory, d.maxPathLen, d.band
   ));
 }
 
@@ -1452,13 +1849,20 @@ function connectedComponents(dj) {
 }
 function structureErrors(dj) {
   const errs = []; const nodeIds = new Set();
+  const isHex = dj.metadata && dj.metadata.topology === 'hex';
   for (const n of dj.nodes) { if (nodeIds.has(n.id)) errs.push('dup node ' + n.id); nodeIds.add(n.id); }
   const byId = indexDj(dj); const edgeIds = new Set();
   for (const e of dj.edges) {
     if (edgeIds.has(e.id)) errs.push('dup edge ' + e.id); edgeIds.add(e.id);
     if (!nodeIds.has(e.fromNodeId) || !nodeIds.has(e.toNodeId)) errs.push('edge endpoint missing ' + e.id);
-    else if (dirBetween(byId.nodes[e.fromNodeId], byId.nodes[e.toNodeId]) === null)
-      errs.push('edge not orthogonal/unit ' + e.id);
+    // Hex edges use hexDirBetween (6-direction axial adjacency); square/3D
+    // edges use dirBetween (4-direction planar + z-layer adjacency). Never
+    // fall back from one to the other — mirrors the Dart topology-scoped
+    // MoveDirection.between rule from Phase 37.1.
+    else if (isHex
+      ? hexDirBetween(byId.nodes[e.fromNodeId], byId.nodes[e.toNodeId]) === null
+      : dirBetween(byId.nodes[e.fromNodeId], byId.nodes[e.toNodeId]) === null)
+      errs.push('edge not lattice-adjacent ' + e.id);
   }
   const arrowIds = new Set();
   for (const a of dj.arrows) {
@@ -1696,17 +2100,19 @@ function noSharedNodes(dj) {
   return conflicts.length ? conflicts : null;
 }
 
-// [fileKind] is '2d' (default) or '3d'. The 2D set (1-20) keeps the full
-// invariant set: difficulty progression (1-5 easy/6-10 medium/11-20 hard),
-// strictly-increasing tier averages, density bands, figure-level real-gap
-// check, contiguous numbering. The 3D set (21-25) is all-hard by design, so
-// the easy/medium progression and increasing-tier-average checks do not
-// apply to it (there is nothing to compare); instead every 3D level must be
-// multi-layer (>1 distinct z), on top of the invariants that already apply
-// generically (structure/no-single-node-arrows, no-free-nodes, greedy
-// solvability, disjoint arrows, real-gap-3D).
+// [fileKind] is '2d' (default), '3d', or 'hex'. The 2D set (1-20) keeps the
+// full invariant set: difficulty progression (1-5 easy/6-10 medium/11-20
+// hard), strictly-increasing tier averages, density bands, figure-level
+// real-gap check, contiguous numbering. The 3D set (21-30) is all-hard by
+// design, so the easy/medium progression and increasing-tier-average checks
+// do not apply to it (there is nothing to compare); instead every 3D level
+// must be multi-layer (>1 distinct z). The hex set (31-40) keeps the same
+// difficulty-progression shape as 2D but over its own 31-33/34-37/38-40
+// numbering and its own (denser) HEX_DENSITY bands — a hex node has 6
+// neighbours instead of 4, so the same node count supports more arrows.
 function validateAll(levels, fileKind = '2d') {
   const is3DFile = fileKind === '3d';
+  const isHexFile = fileKind === 'hex';
   let ok = true; const warnings = [];
   const diffByNum = {}, arrowsByTier = { easy: [], medium: [], hard: [] };
   for (const lvl of levels) {
@@ -1718,20 +2124,21 @@ function validateAll(levels, fileKind = '2d') {
     const isMultiLayer = new Set(dj.nodes.map(zOf)).size > 1;
     const layerErr = is3DFile && !isMultiLayer;
     if (layerErr) ok = false;
-    // Figure levels (16-20) are deliberately concave silhouettes: a bbox-
-    // interior "gap" can be a legitimate part of the shape's own visible
-    // outer edge, not an accidental hole. Random tiers (1-15) use the
-    // blanket bbox check; figures use the figure-aware check (Phase 19) that
-    // only flags a gap when it hides a real blocker past it; 3D levels (21+)
-    // use the z-aware equivalent of the same real-gap semantics.
+    // Figure levels (16-20) and hex levels (31-40) are deliberately concave/
+    // non-rectangular silhouettes: a bbox-interior "gap" can be a legitimate
+    // part of the shape's own visible outer edge, not an accidental hole.
+    // Random tiers (1-15) use the blanket bbox check; figures/hex use the
+    // shape-aware check (Phase 19) that only flags a gap when it hides a
+    // real blocker past it; 3D levels (21+) use the z-aware equivalent.
     const isFigure = dj.metadata && dj.metadata.generationType === 'figure';
+    const isHex = dj.metadata && dj.metadata.generationType === 'hex';
     const is3D = dj.metadata && dj.metadata.generationType === '3d';
     const gapExit =
       is3D ? hasRealInteriorGapExit3D(dj)
-        : isFigure ? hasRealInteriorGapExit(dj) : hasInteriorGapExit(dj);
+        : (isFigure || isHex) ? hasRealInteriorGapExit(dj) : hasInteriorGapExit(dj);
     const components = connectedComponents(dj), n = dj.arrows.length;
     if (arrowsByTier[diff]) arrowsByTier[diff].push(n);
-    const band = DENSITY[diff]; let densityErr = '';
+    const band = isHexFile ? HEX_DENSITY[diff] : DENSITY[diff]; let densityErr = '';
     if (band) {
       if (n < band.min || n > band.max) densityErr = `density ${n} out of [${band.min},${band.max}]`;
       else if (band.warn && n > band.warn) warnings.push(`#${lvl.number} dense (${n} arrows, >${band.warn})`);
@@ -1748,7 +2155,7 @@ function validateAll(levels, fileKind = '2d') {
       ' comp=' + components +
       ' free=' + (free ? JSON.stringify(free) : '-') +
       ' shared=' + (shared ? JSON.stringify(shared) : '-') +
-      ' gapExit=' + (gapExit ? 'Y' : '-') +
+      ' gapExit=' + (gapExit ? (isFigure || isHex ? 'Y(shape-ok)' : 'Y') : '-') +
       ' solvable=' + sv +
       (is3D ? ' layers=' + new Set(dj.nodes.map(zOf)).size + (layerErr ? ' NOT_MULTI_LAYER' : '') : '') +
       (components !== 1 ? ' DISCONNECTED(' + components + ')' : '') +
@@ -1766,6 +2173,22 @@ function validateAll(levels, fileKind = '2d') {
     console.log('all levels hard (3D set):', allHard);
     if (warnings.length) console.log('WARNINGS:', warnings.join('; '));
     const allOk = ok && allHard;
+    console.log('ALL VALID:', allOk);
+    return allOk;
+  }
+  if (isHexFile) {
+    // Hex set (31-40): same progression shape as 2D, over its own numbering.
+    const prog = [31,32,33].every(k => diffByNum[k] === 'easy') &&
+      [34,35,36,37].every(k => diffByNum[k] === 'medium') &&
+      [38,39,40].every(k => diffByNum[k] === 'hard');
+    const avg = t => arrowsByTier[t].reduce((a, b) => a + b, 0) / (arrowsByTier[t].length || 1);
+    const increasing = avg('easy') < avg('medium') && avg('medium') < avg('hard');
+    console.log();
+    console.log('difficulty progression ok (hex set):', prog);
+    console.log('tier avg arrows: easy=' + avg('easy').toFixed(1) + ' medium=' + avg('medium').toFixed(1) +
+      ' hard=' + avg('hard').toFixed(1) + ' (must strictly increase:', increasing + ')');
+    if (warnings.length) console.log('WARNINGS:', warnings.join('; '));
+    const allOk = ok && prog && increasing;
     console.log('ALL VALID:', allOk);
     return allOk;
   }
@@ -1853,6 +2276,19 @@ function runGenerate3D() {
   return allOk;
 }
 
+function runGenerateHex() {
+  console.log('MODE: --generate-hex (levels 31-40; writes manual_levels_hex.json)\n');
+  const levels = buildHexLevels();
+  console.log();
+  const allOk = validateAll(levels, 'hex');
+  if (allOk) {
+    writeLevels(ASSET_HEX, levels);
+  } else {
+    console.log('\nNOT WRITTEN — fix issues first'); process.exitCode = 1;
+  }
+  return allOk;
+}
+
 function readContiguous(assetPath, expectedStart) {
   const parsed = JSON.parse(fs.readFileSync(assetPath, 'utf8'));
   const levels = parsed.levels || [];
@@ -1871,9 +2307,11 @@ function main() {
   const generate = args.includes('--generate');
   const generate2D = args.includes('--generate-2d');
   const generate3D = args.includes('--generate-3d');
-  const modeCount = [generate, generate2D, generate3D, args.includes('--validate-only')].filter(Boolean).length;
+  const generateHex = args.includes('--generate-hex');
+  const modeCount = [generate, generate2D, generate3D, generateHex, args.includes('--validate-only')]
+    .filter(Boolean).length;
   if (modeCount > 1) {
-    console.error('Pass exactly one of --generate, --generate-2d, --generate-3d, --validate-only.');
+    console.error('Pass exactly one of --generate, --generate-2d, --generate-3d, --generate-hex, --validate-only.');
     process.exitCode = 2; return;
   }
   if (!selfTest()) return;
@@ -1896,7 +2334,13 @@ function main() {
     if (!ok) process.exitCode = 1;
     return;
   }
-  console.log('MODE: --validate-only (reads manual_levels_2d.json + manual_levels_3d.json, never writes)\n');
+  if (generateHex) {
+    const ok = runGenerateHex();
+    if (!ok) process.exitCode = 1;
+    return;
+  }
+  console.log('MODE: --validate-only (reads manual_levels_2d.json + manual_levels_3d.json' +
+    (fs.existsSync(ASSET_HEX) ? ' + manual_levels_hex.json' : '') + ', never writes)\n');
   const levels2d = readContiguous(ASSET_2D, 1);
   const levels3d = readContiguous(ASSET_3D, 21);
   if (!levels2d || !levels3d) { process.exitCode = 1; return; }
@@ -1904,7 +2348,16 @@ function main() {
   const ok2d = validateAll(levels2d, '2d');
   console.log('\n--- 3D set (manual_levels_3d.json) ---');
   const ok3d = validateAll(levels3d, '3d');
-  if (!ok2d || !ok3d) process.exitCode = 1;
+  let okHex = true;
+  if (fs.existsSync(ASSET_HEX)) {
+    const levelsHex = readContiguous(ASSET_HEX, 31);
+    if (!levelsHex) { okHex = false; }
+    else {
+      console.log('\n--- hex set (manual_levels_hex.json) ---');
+      okHex = validateAll(levelsHex, 'hex');
+    }
+  }
+  if (!ok2d || !ok3d || !okHex) process.exitCode = 1;
 }
 
 main();

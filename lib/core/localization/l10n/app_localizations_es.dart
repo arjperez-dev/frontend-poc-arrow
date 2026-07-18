@@ -33,6 +33,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get gameMode3D => '3D';
 
   @override
+  String get gameModeHex => 'HEX';
+
+  @override
   String get gameModeHint => 'Elige que conjunto de niveles abre el menu.';
 
   @override

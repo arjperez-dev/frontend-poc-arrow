@@ -1,5 +1,6 @@
 import 'package:frontend_poc_arrow/features/game/domain/direction.dart';
 import 'package:frontend_poc_arrow/features/game/domain/game_session.dart';
+import 'package:frontend_poc_arrow/features/game/domain/hex_direction.dart';
 import 'package:frontend_poc_arrow/features/game/domain/level.dart';
 import 'package:frontend_poc_arrow/features/game/domain/level_definition.dart';
 import 'package:frontend_poc_arrow/features/game/domain/level_definition_validator.dart';
@@ -76,5 +77,51 @@ LevelDefinition collisionDefinition({
     arrows: arrows,
     blockedEdgeIds: const [],
     metadata: const {'difficulty': 'test'},
+  );
+}
+
+// A centre node with its 6 axial hex neighbours, one per HexDirection.
+// centre(0,0), east(1,0), northEast(1,-1), northWest(0,-1), west(-1,0),
+// southWest(-1,1), southEast(0,1). Single arrow covers centre->east so the
+// fixture validates and produces a hex BoardGraph out of the box; callers
+// needing a different arrow shape should pass their own `arrows`.
+LevelDefinition hexDefinition({
+  List<ArrowPathDefinition>? arrows,
+  Map<String, Object?>? metadata,
+  int? number,
+}) {
+  return LevelDefinition(
+    id: 'hex-test-level',
+    number: number,
+    name: 'Hex Test Level',
+    nodes: const [
+      GraphNodeDefinition(id: 'centre', x: 0, y: 0),
+      GraphNodeDefinition(id: 'east', x: 1, y: 0),
+      GraphNodeDefinition(id: 'northEast', x: 1, y: -1),
+      GraphNodeDefinition(id: 'northWest', x: 0, y: -1),
+      GraphNodeDefinition(id: 'west', x: -1, y: 0),
+      GraphNodeDefinition(id: 'southWest', x: -1, y: 1),
+      GraphNodeDefinition(id: 'southEast', x: 0, y: 1),
+    ],
+    edges: const [
+      GraphEdgeDefinition(id: 'centre-east', fromNodeId: 'centre', toNodeId: 'east'),
+      GraphEdgeDefinition(id: 'centre-northEast', fromNodeId: 'centre', toNodeId: 'northEast'),
+      GraphEdgeDefinition(id: 'centre-northWest', fromNodeId: 'centre', toNodeId: 'northWest'),
+      GraphEdgeDefinition(id: 'centre-west', fromNodeId: 'centre', toNodeId: 'west'),
+      GraphEdgeDefinition(id: 'centre-southWest', fromNodeId: 'centre', toNodeId: 'southWest'),
+      GraphEdgeDefinition(id: 'centre-southEast', fromNodeId: 'centre', toNodeId: 'southEast'),
+    ],
+    arrows: arrows ??
+        const [
+          ArrowPathDefinition(
+            id: 'hex-arrow-1',
+            occupiedEdgeIds: ['centre-east'],
+            startNodeId: 'centre',
+            endNodeId: 'east',
+            direction: HexDirection.east,
+          ),
+        ],
+    blockedEdgeIds: const [],
+    metadata: metadata ?? const {'difficulty': 'test', 'topology': 'hex'},
   );
 }

@@ -453,3 +453,81 @@ nodes, edges, arrows — extended with a third axis:
   (`ApiRemoteLevelRepository.getLevelIdsByNumber`) already reads every row
   from `GET /levels` regardless of this feature, so remote-band levels get
   the same mapping as 1–30 with no code change.
+
+## 18. Hex levels (31–40, Phase 37)
+
+- Ten levels, internal numbers **31–40**, in their own file
+  `assets/levels/manual_levels_hex.json` (same schema split as the 2D/3D
+  files — see §2). As of Phase 37.4, `LocalLevelDataSource` loads and
+  concatenates this file after the 3D set, hex is a first-class third
+  `GameMode`, and `HexBoard` (Phase 37.3) renders it — the full stack works
+  end to end.
+- **Mode routing (Phase 37.4).** `GameMode.hex` is a third enum value
+  alongside `twoD`/`threeD`. `level_mode_filter.dart`'s `modeOfLevel(Level)`
+  is the single routing authority across all three modes: it checks
+  `boardGraph.topology == BoardTopology.hex` **first**, before falling back
+  to the existing shape-based 2D/3D check (`isThreeDLevel`). This order
+  matters — a hex level's internal number (31+) is above `twoDLevelCount`
+  (20), so `isThreeDLevel`'s local-only numeric fallback would otherwise
+  misclassify every hex level as 3D. Reserve internal numbers **31–50** for
+  hex (only 31–40 shipped so far — `hexLevelCount = 40` in
+  `level_mode_filter.dart`); `AppConfig.manualLevelCount` stays 30 (it only
+  ever covered 2D+3D). `firstInternalLevelFor`/`maxInternalLevelFor`/
+  `displayNumberFor` are range-driven per mode (a `switch` on `GameMode`),
+  not a single 2D/3D split point.
+- **Axial coordinates.** Node `x`/`y` store axial `(q, r)` directly — no new
+  coordinate type, exactly like `z` for 3D levels (§16). There are no cube
+  coordinates in the schema; nothing in the codebase computes hex distance or
+  rotation at runtime, only the level generator does (for silhouette masks).
+- **`metadata.topology: "hex"`** is the load-bearing flag. It is read
+  explicitly by the domain (`LevelDefinitionValidator._topologyOf`,
+  `LevelDefinitionMapper`), **not inferred from graph shape** — a hex graph
+  and a square graph are indistinguishable by node coordinates alone, since
+  axial coordinates reuse the same integer lattice as square `(x, y)`. This
+  is a deliberate departure from the "graph shape is the source of truth"
+  rule §16/Phase 34.1 established for 2D vs 3D (which uses real `z`).
+- **Six direction names**, pointy-top axial, matching
+  `lib/features/game/domain/hex_direction.dart`'s `HexDirection` exactly:
+  `east (+1,0)`, `northEast (+1,-1)`, `northWest (0,-1)`, `west (-1,0)`,
+  `southWest (-1,+1)`, `southEast (0,+1)`. Four of these deltas are
+  numerically identical to the square `right/up/left/down` deltas — this is
+  why direction resolution is topology-scoped (`MoveDirection.between`/
+  `.parse(..., {topology})`), never a single merged registry; see
+  `harness/phases/phase_37_audit_findings.md` §2 for the full analysis of why
+  a naive merge silently misresolves half the hex directions and rejects the
+  other half.
+- **Generator.** `node tool/gen_levels.js --generate-hex` builds levels
+  31–40 from `hexRingMask(radius)` (a regular hexagon of axial cells within
+  cube-distance `radius` of the origin) for the easy/medium tiers, and two
+  irregular hard-tier masks for variety: `hexRingMaskIrregular` (a regular
+  hexagon with a fraction of its outer ring randomly removed, BFS-checked
+  for hex connectivity — the hex counterpart of the square hard tier's
+  boundary removal) and `hexStadiumMask` (two overlapping regular hexagons
+  offset along the east/west axis, unioned — an elongated silhouette). Both
+  are parallel paths (`BuilderHex`, `partitionNodesHex`), not modifications
+  of the existing square/figure/3D builders — same precedent as
+  `Builder3D`. `--validate-only` additionally validates
+  `manual_levels_hex.json` **only when the file is present** on disk.
+- **Density bands** (`HEX_DENSITY` in `tool/gen_levels.js`) are **not** the
+  same as the square `DENSITY` bands. A hex node has 6 neighbours instead of
+  4, so a hex board of a given node count packs into fewer, longer arrows
+  under the same `maxPathLen` — empirically, easy/medium/hard hex tiers
+  (radius 2/3/4–5, `maxPathLen` 2–4) land at arrows≈6–9 / 11–21 / 17–23,
+  clearly below what the same node counts would produce on a square board.
+  Final bands: easy `[5,11]`, medium `[10,24]`, hard `[15,30]` (warn `>26`).
+  These were tuned empirically against this generator's own output (run with
+  temporarily unbounded bands to observe real counts first), the same method
+  used for the spade/crown figure-level tuning in §15.
+- **Solvability, gap-exit, self-intersection, and shared-node checks are
+  reused unchanged from the square/figure infrastructure** — `canExit`,
+  `hasSelfIntersectingArrow`, `hasRealInteriorGapExit`, `noSharedNodes`,
+  `connectedComponents`, and `solvableGreedy` are all already generic over
+  `DELTA[direction]` (a name-keyed lookup, not a delta-keyed one, so hex
+  direction names coexist safely) and coordinates, so they needed **zero**
+  hex-specific variants. The one place that did need a hex-aware branch is
+  `structureErrors`' edge-orthogonality check (`dirBetween` only recognizes
+  square deltas); it now branches on `dj.metadata.topology === 'hex'` to use
+  `hexDirBetween` instead.
+- **`--generate-hex` reads the on-disk hex asset (if any), regenerates
+  31–40, validates, and writes only if every check passes** — same
+  write-only-if-valid contract as every other generation mode.

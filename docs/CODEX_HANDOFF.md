@@ -3318,3 +3318,309 @@ number band `>= 1000`, offline-first merge, local always wins). Added:
 - Both additions have EN + ES keys in `script.js`; verified via the Browser
   pane (console clean, both languages resolve, zero empty `[data-i18n]`
   renders after an EN→ES→EN cycle).
+
+## Phase 37.1 — Hexagonal Boards: Domain Foundation (6 Directions + Topology Scoping)
+
+Branch `feat/phase-37-hexagonal-board`. First slice of Phase 37 (see
+`harness/phases/phase_37_audit_findings.md` for the full pre-implementation
+audit and the 4-sub-phase split). Extends the domain so a board can declare
+hexagonal topology and resolve 6 directions, without altering any behaviour
+for existing square levels.
+
+### What Changed
+
+- **`lib/features/game/domain/board_topology.dart` (new)**: `enum BoardTopology { square, hex }`. `square` covers both the 2D plane (`Direction`) and the 3D layer lattice (`Direction` + `LayerDirection`); `hex` is planar-only.
+- **`lib/features/game/domain/hex_direction.dart` (new)**: `enum HexDirection implements MoveDirection` — pointy-top axial deltas (`east(1,0) northEast(1,-1) northWest(0,-1) west(-1,0) southWest(-1,1) southEast(0,1)`), `dz` always 0, opposite pairs mirrored, names distinct from `Direction`/`LayerDirection`.
+- **`lib/features/game/domain/move_direction.dart`**: replaced the flat global `all` registry with topology-scoped resolution — `allFor(BoardTopology)`, `between(from, to, {topology = square})`, `parse(value, {topology = square})`. The old `all` getter was deleted (no lib caller depended on it); every new parameter defaults to `square` so every pre-existing call site is behaviourally unchanged.
+- **`lib/features/game/domain/board_graph.dart`**: added `final BoardTopology topology` (defaults to `square`), threaded into `MoveDirection.between` inside `getNeighbor` and propagated through `layerSubgraph(z)`. `nodeByCoordinate`/`_nodesByCoordinate` untouched.
+- **`lib/features/game/domain/level_definition_validator.dart`**: added `_topologyOf(definition)` — reads `metadata['topology']` (`'hex'` -> hex, absent/`'square'` -> square, anything else throws `LevelDefinitionException`). Threaded into the edge-adjacency check and the constructed `BoardGraph`. Generalised the error string `'Edge X must be orthogonal.'` -> `'Edge X must connect lattice-adjacent nodes.'` (no test asserted the old exact wording). All other checks (cycle, branching-head, head-direction, self-intersection) needed zero logic change — verified, not assumed, since they already route through `applyTo`/coordinate equality.
+- **`lib/features/game/infrastructure/level_definition_mapper.dart`**: derives topology from `metadata['topology']` and threads it into `MoveDirection.parse` for each arrow's direction. An unrecognised direction name for the level's topology still throws `FormatException` — no cross-topology fallback.
+- **`test/features/game/game_test_fixtures.dart`**: added `hexDefinition()` — 7-node fixture (one centre + its 6 axial neighbours), single default arrow `centre -> east`, `metadata: {'topology': 'hex'}`. Reusable by 37.3.
+
+### Why "just add a HexDirection enum to MoveDirection.all" doesn't work
+
+Four of the six pointy-top axial hex deltas are byte-identical to the four
+square `Direction` deltas (east/west/northWest/southEast match
+right/left/up/down). A single flat, merged direction list would (1) silently
+resolve a hex step to the wrong square direction for those four, and (2)
+either keep rejecting the two truly-diagonal hex deltas (northEast/southWest)
+on hex boards, or — if added to fix that — start accepting those same deltas
+as valid on **square** boards, regressing the existing orthogonality
+guarantee. Direction resolution must be scoped per topology, never merged;
+see `harness/phases/phase_37_audit_findings.md` §2 for the full analysis.
+
+### MovementResolver — confirmed unchanged
+
+`git diff --stat -- lib/features/game/application/movement_resolver.dart`
+is empty after this phase. The resolver sweeps purely by coordinate
+(`arrow.direction.applyTo(coordinate)` -> `graph.nodeByCoordinate`) and never
+calls `MoveDirection.between`/`getNeighbor`, so it is topology-agnostic by
+construction — exactly as the audit predicted. Proven by a new
+application-layer test (`test/features/game/application/hex_movement_test.dart`)
+exercising a clear hex sweep to boundary (escaped), a blocker on the head's
+axial ray (collision), and a bent two-edge hex arrow (escaped) — all against
+the real `MovementResolver`, zero resolver code touched.
+
+### Files Touched
+
+- `lib/features/game/domain/board_topology.dart` (new)
+- `lib/features/game/domain/hex_direction.dart` (new)
+- `lib/features/game/domain/move_direction.dart`
+- `lib/features/game/domain/board_graph.dart`
+- `lib/features/game/domain/level_definition_validator.dart`
+- `lib/features/game/infrastructure/level_definition_mapper.dart`
+- `test/features/game/game_test_fixtures.dart`
+- `test/features/game/domain/hex_direction_test.dart` (new)
+- `test/features/game/domain/move_direction_test.dart`
+- `test/features/game/domain/level_definition_validator_test.dart`
+- `test/features/game/application/hex_movement_test.dart` (new)
+
+### Verification Results
+
+- `flutter analyze`: passed with no issues.
+- `flutter test`: 291/291 passed (16 new: 4 in `hex_direction_test.dart`, 5 in `move_direction_test.dart`, 4 in `level_definition_validator_test.dart`, 3 in `hex_movement_test.dart`).
+- `node tool/gen_levels.js --validate-only`: ALL VALID true for both the 2D and 3D sets, exit 0, no files touched (no level files were touched this phase — `--validate-only` was run purely as a regression proof).
+
+### New Tests
+
+- `hex_direction_test.dart`: `should_step_to_all_six_axial_neighbours`, `should_pair_opposites_correctly`, `should_preserve_z_when_applied`, `should_not_share_any_name_with_square_or_layer_directions`.
+- `move_direction_test.dart` (extended): `should_resolve_east_not_right_when_topology_is_hex`, `should_resolve_right_not_east_when_topology_is_square`, `should_return_null_for_hex_diagonal_delta_when_topology_is_square`, `should_resolve_north_east_when_topology_is_hex`, `should_reject_hex_direction_name_when_topology_is_square`.
+- `level_definition_validator_test.dart` (extended): `should_accept_hex_level_with_six_direction_adjacency`, `should_reject_hex_edge_between_non_adjacent_axial_nodes`, `should_reject_unknown_topology_metadata_value`, `should_still_reject_diagonal_edge_on_square_level`.
+- `hex_movement_test.dart` (new): `clear_hex_sweep_to_boundary_escapes`, `blocker_on_heads_axial_ray_is_collision`, `bent_hex_arrow_escapes_along_its_own_axes`.
+
+### Limitations
+
+- No level assets exist yet for hex topology (37.2's scope) — this phase's hex coverage is entirely hand-authored unit/application fixtures.
+- No presentation work; hex levels have no renderer yet (37.3's scope).
+- No mode routing; hex is not yet selectable anywhere in the UI (37.4's scope).
+- Manual on-device validation is not applicable — this phase has no runtime-behavior-affecting surface for existing square/3D content (proven by the untouched 291-test suite and the `--validate-only` regression check).
+
+### Next Recommended Phase
+
+Phase 37.2 — hex level generation & asset (`tool/gen_levels.js` hex mode, `assets/levels/manual_levels_hex.json`), per `harness/phases/phase_37_2_hex_level_generation.md`.
+
+## Phase 37.2 — Hexagonal Boards: Level Generation & Asset
+
+Branch `feat/phase-37-hexagonal-board`. Second slice of Phase 37 (depends on
+37.1, merged). Adds a hex generation mode to the build-time level tool and
+produces a validated hex level asset — no Dart source changed.
+
+### What Changed
+
+- **`tool/gen_levels.js`** — hex support added as a parallel path (mirrors the `--generate-3d` precedent), no existing 2D/figure/3D builder generalised in place:
+  - `HEX_DELTA` table (added into the existing name-keyed `DELTA` object — safe because hex names never collide with square names as *strings*, unlike Dart's delta-keyed `MoveDirection.between`), mirroring `HexDirection` from 37.1 literally.
+  - `hexDirBetween`, `hexNeighbors`, `hexBfsComponents` — hex counterparts of `dirBetween`/`coordAdj`/`coordBfsComponents`.
+  - `hexRingMask(radius)` (regular hexagon via cube-distance), `hexRingMaskIrregular(radius, rng, removalFraction)` (boundary-removed ring, hex-BFS-connectivity-checked), `hexStadiumMask(radius, stretch)` (two offset hexagons unioned) — the two irregular masks are the hard-tier variety the phase doc called for.
+  - `partitionNodesHex`/`hexFinalDir`/`hexMergeSingleton` — literal copy of `partitionNodes`'s most-constrained-first DFS over `hexNeighbors` (6-neighbourhoods) instead of `coordAdj` (4-neighbourhoods).
+  - `BuilderHex` — hex counterpart of `Builder`: `addNode(q,r)`, `arrowOverCells`, `weaveHex()`, `build(meta)` emitting `metadata: {topology:'hex', generationType:'hex', ...}`.
+  - `generateHexLevel` — same retry/reject-tally shape as `generateFigureLevel`, reusing `connectedComponents`, `hasRealInteriorGapExit`, `hasSelfIntersectingArrow`, `solvableGreedy` **completely unchanged** (all four are generic over `DELTA[direction]`/coordinates, confirmed during the pre-implementation audit — no hex-specific variant needed).
+  - `structureErrors` gained the **one** genuinely hex-aware branch: the edge-orthogonality check now checks `dj.metadata.topology === 'hex'` and uses `hexDirBetween` instead of `dirBetween` for that check only (hex edges' deltas aren't in the square set).
+  - `validateAll` gained a third `fileKind: 'hex'` branch: progression `31-33 easy / 34-37 medium / 38-40 hard`, strictly-increasing tier averages, `HEX_DENSITY` bands (separate from square `DENSITY` — see below).
+  - New CLI mode `--generate-hex`; `--validate-only` additionally validates `manual_levels_hex.json` **only when present** (`fs.existsSync` gate, since the file didn't exist before this phase's own generate step).
+- **`assets/levels/manual_levels_hex.json` (new)** — 10 levels, numbers 31–40, `metadata: {topology:'hex', difficulty, generationType:'hex'}`. Node coordinates are axial `(q,r)` in the existing `x`/`y` fields (no `z`); arrow `direction` values are the 37.1 `HexDirection` names.
+- **`pubspec.yaml`** — registered `assets/levels/manual_levels_hex.json`.
+- **`docs/LEVEL_AUTHORING.md`** — new §18 documenting hex topology, axial coordinates, the six direction names, the `metadata.topology` flag, the `--generate-hex` command, the two irregular hard-tier masks, and the density-band tuning record.
+- **`test/features/game/infrastructure/manual_levels_hex_test.dart` (new)** — loads the hex asset directly (bypassing `LocalLevelDataSource`, which isn't wired to it yet — that's 37.4's scope) through the real DTO → mapper → validator pipeline, mirroring `manual_levels_test.dart`'s invariants.
+
+### Density bands (hex vs. square)
+
+A hex node has 6 neighbours instead of 4, so a hex board of a given node
+count packs into fewer, longer arrows under the same `maxPathLen` than a
+square board would. Empirically tuned against this generator's own output
+(ran with temporarily unbounded bands first to observe real counts — same
+method as the Phase 16/19 figure-level tuning): easy/medium/hard averaged
+arrows≈7.0 / 15.5 / 20.7 (radius 2/3/4-5, `maxPathLen` 2-4). Final
+`HEX_DENSITY` bands: easy `[5,11]`, medium `[10,24]`, hard `[15,30]`
+(warn `>26`) — comfortable headroom around the observed values, not a tight
+fit, since only 10 levels ship and each is deterministic per seed.
+
+### Files Touched
+
+- `tool/gen_levels.js`
+- `assets/levels/manual_levels_hex.json` (new)
+- `pubspec.yaml`
+- `docs/LEVEL_AUTHORING.md`
+- `test/features/game/infrastructure/manual_levels_hex_test.dart` (new)
+
+### Verification Results
+
+- `node tool/gen_levels.js --generate-hex`: `ALL VALID: true`, wrote `manual_levels_hex.json`. Deterministic (identical output byte-for-byte on a second run with the same seeds).
+- `node tool/gen_levels.js --validate-only`: all three sets (2D, 3D, hex) `ALL VALID: true`, exit 0.
+- `git diff --stat -- assets/levels/manual_levels_2d.json assets/levels/manual_levels_3d.json`: empty — both files byte-identical after this phase. `--generate`/`--generate-2d`/`--generate-3d`/`--generate-figures` were never run.
+- No Dart source was modified this phase (constraint held — a hex level validates cleanly under the real Dart validator/resolver without any 37.1 gap surfacing).
+- `flutter analyze`: passed with no issues.
+- `flutter test`: 299/299 passed (8 new, all in `manual_levels_hex_test.dart`).
+
+### New Tests
+
+- `manual_levels_hex_test.dart`: `should_load_ten_hex_levels_numbered_31_to_40`, `should_declare_hex_topology_in_metadata`, `should_have_no_free_nodes_at_level_start`, `should_be_greedy_solvable` (via the real `MovementResolver`), `should_have_a_single_connected_component`, `should_use_all_six_hex_directions_across_the_set`, `should_have_no_interior_gap_exits`, `should_have_bent_arrows_in_every_difficulty_tier`.
+
+### Limitations
+
+- Hex levels are not yet loaded by the running app — `LocalLevelDataSource` still only concatenates the 2D and 3D asset files; wiring in the hex file, mode routing, and UI selection are Phase 37.4's scope.
+- No presentation exists yet for hex boards (37.3's scope) — the 10 levels validate and solve correctly under the real domain/application layers but cannot be rendered or played yet.
+- Manual on-device validation is not applicable — no runtime-behavior-affecting surface exists for existing content (2D/3D assets provably untouched, full suite green).
+
+### Next Recommended Phase
+
+Phase 37.3 — hex board rendering & hit-testing (`HexBoardLayout`, `HexBoardPainter`, `HexBoard`), per `harness/phases/phase_37_3_hex_board_rendering.md`.
+
+## Phase 37.3 — Hexagonal Boards: Rendering & Hit-Testing
+
+Branch `feat/phase-37-hexagonal-board`. Third slice of Phase 37 (depends on
+37.1 and 37.2, both merged). Renders hex levels with visible hexagonal
+cells and makes taps land correctly — presentation-only, no domain,
+application, or level-asset changes.
+
+### Pre-Implementation Confirmation
+
+The phase-37 audit's framing held under direct inspection: `GraphBoardPainter`
+never reads `BoardCoordinate` — every position comes from
+`layout.positionOf(nodeId)` — and `GraphBoardHitTester.findArrowAt` is purely
+metric (distance to head, `distanceToSegment` for body segments), with no
+cell-shape assumption. `game_screen.dart`'s existing
+`if (level.boardGraph.isMultiLayer) Graph3DBoard(...) else GraphBoard(...)`
+(the Phase 27 precedent for a parallel board widget) confirmed the pattern
+`HexBoard` needed to slot into.
+
+### What Changed
+
+- **`lib/features/game/presentation/widgets/board_layout.dart` (new)** — `BoardLayout` abstract interface (`positionOf`/`step`), implemented by both `GraphBoardLayout` and the new `HexBoardLayout`. Lets the shared painter/hit-tester code work against either geometry.
+- **`lib/features/game/presentation/widgets/board_painter_helpers.dart` (new)** — shared drawing logic extracted out of `GraphBoardPainter`'s 349 lines rather than duplicated: `paintBoardBackground`, `paintGraphEdges`, `paintCoveredAndFreeNodes`, `arrowStrokeWidth`, `drawArrowHeadAt`, `paintArrowShape`, `shakeOffsetFor`, `paintExitingArrow` (the arc-length exit-track sampling from Phase 13). Parameterized by `BoardLayout` and by an `ArrowHeadAngleFor` callback (`double Function(MoveDirection)`) — the one thing that must differ per topology (turning a direction into a screen-space angle). `defaultAngleFor` (`atan2(dy,dx)`) reproduces the old square-board behavior exactly.
+- **Correctness fix found during extraction (not anticipated by the phase plan):** `_drawExitingArrow`'s "continue past the head" direction vector and `_shakeOffsetFor`'s nudge direction both used `arrow.direction.dx/dy` directly as a pixel-space unit vector. That's correct for square `Direction` (axis-aligned unit deltas) but wrong for `HexDirection` — e.g. `northEast`'s axial delta `(1,-1)` does not point along its actual 300° screen angle once mapped through the pointy-top projection (`atan2(-1,1) = 315°`, not 300°). Both helpers now derive the pixel unit vector as `(cos(angleFor(direction)), sin(angleFor(direction)))`, which is numerically identical to the old `(dx,dy)` on square boards (their `defaultAngleFor` already equals `atan2(dy,dx)`) and correct on hex.
+- **`lib/features/game/presentation/widgets/graph_board_layout.dart`** — implements `BoardLayout` (`@override` on `step`/`positionOf`); no behavior change.
+- **`lib/features/game/presentation/widgets/graph_board_painter.dart`** — rewritten to delegate to `board_painter_helpers.dart`; same public API, same `paint`/`shouldRepaint` contract, verified behaviorally unchanged by the full existing suite staying green.
+- **`lib/features/game/presentation/widgets/hex_board_layout.dart` (new)** — `HexBoardLayout implements BoardLayout`. Axial `(q,r)` (stored directly in `BoardCoordinate.x/y` per 37.1) maps to pixels via `px=hexSize*√3*(q+r/2)`, `py=hexSize*1.5*r`. `fromGraph` fits `hexSize` from the *true pixel bounding box* of the mapped node centres — computed first at `hexSize=1` (unit mapping), not from the skewed axial coordinate extents, per the phase spec. `step = hexSize*√3`. `hexVertices(centre)` returns the 6 pointy-top corner offsets (`centre + hexSize*(cos θ, sin θ)`, θ = 60°·i − 30°) for the painter's outline. `aspectRatioFor(graph)` mirrors `GraphBoard`'s bbox-based `AspectRatio` (clamped `[0.6,1.6]`), also computed through the pixel mapping rather than raw axial extents.
+- **`lib/features/game/presentation/widgets/hex_board_painter.dart` (new)** — `HexBoardPainter` reuses every helper from `board_painter_helpers.dart`; the only new drawing work is a subtle hexagon outline stroked per node (`layout.hexVertices`), consistent with the existing near-invisible-until-escaped node convention. `hexAngleFor(MoveDirection)` is an explicit 6-entry table (east 0°, southEast 60°, southWest 120°, west 180°, northWest 240°, northEast 300°, screen-space y-down) — not derivable from the axial delta the way `defaultAngleFor` is for square.
+- **`lib/features/game/presentation/widgets/hex_board.dart` (new)** — `HexBoard` mirrors `GraphBoard`'s structure line-for-line: same constructor surface (`session`, `onArrowActivated`, `lastActivatedArrowId`, `flashingArrowId`, `animate`, `onInteractionActiveChanged`), same exit/shake `AnimationController`s, same `InteractiveViewer` pan/zoom + reset-view button, same `GameUiKeys.gameBoard` key, tap `GestureDetector` inside the transformed child. Uses `HexBoardLayout`/`HexBoardPainter` and reuses `GraphBoardHitTester` unchanged (now typed against `BoardLayout`).
+- **`lib/features/game/presentation/widgets/graph_board_hit_tester.dart`** — `findArrowAt`'s `layout` parameter widened from `GraphBoardLayout` to `BoardLayout` so the same tester serves both boards. The `0.45`-of-`step` slop cap needed **no numeric retune**: every one of a hex node's 6 neighbours is exactly `step` pixels away (proven algebraically — `step` is defined as centre-to-centre spacing on both lattices — and pinned by the new origin/neighbour test), the same uniform-spacing guarantee the square board's 4 directions already give. Added a doc comment recording this instead of changing the constant.
+- **`lib/features/game/presentation/game_screen.dart`** — added `else if (level.boardGraph.topology == BoardTopology.hex) HexBoard(...)` alongside the existing `if (level.boardGraph.isMultiLayer) Graph3DBoard(...) else GraphBoard(...)`. `GraphBoard`/`Graph3DBoard` selection and behavior for existing 2D/3D levels is untouched.
+
+### Files Touched
+
+- `lib/features/game/presentation/widgets/board_layout.dart` (new)
+- `lib/features/game/presentation/widgets/board_painter_helpers.dart` (new)
+- `lib/features/game/presentation/widgets/hex_board_layout.dart` (new)
+- `lib/features/game/presentation/widgets/hex_board_painter.dart` (new)
+- `lib/features/game/presentation/widgets/hex_board.dart` (new)
+- `lib/features/game/presentation/widgets/graph_board_layout.dart`
+- `lib/features/game/presentation/widgets/graph_board_painter.dart`
+- `lib/features/game/presentation/widgets/graph_board_hit_tester.dart`
+- `lib/features/game/presentation/game_screen.dart`
+- `test/features/game/presentation/hex_board_test.dart` (new)
+
+### Verification Results
+
+- `flutter analyze`: passed with no issues.
+- `flutter test`: 305/305 passed (6 new, all in `hex_board_test.dart`).
+- `node tool/gen_levels.js --validate-only`: not run — no level assets touched this phase (presentation-only).
+- `git status`: confirms no changes to `backend-poc-arrow`, `domain/`, `application/`, any level asset file, or Git remotes.
+
+### New Tests
+
+- `hex_board_test.dart`: `should_map_axial_origin_and_neighbours_to_expected_pixel_offsets` (verifies all 6 neighbour deltas as ratios of `step`, including the uniform-spacing property the hit-slop cap relies on), `should_fit_board_within_available_size_using_pixel_bounding_box`, `should_activate_arrow_when_tapping_its_head_on_a_hex_board` (widget test via `HexBoard`), `should_not_activate_a_neighbouring_arrow_when_tapping_near_a_shared_edge` (against the real shipped level 38 — densest hex level, 87 nodes/23 arrows — finds the two closest active-arrow heads on the fitted board and taps 25% of the way toward the neighbour, asserting the nearer arrow alone activates), `should_render_hex_board_for_a_hex_topology_level`, `should_still_render_square_board_for_a_square_level` (regression, proves the shared-helper extraction didn't change `GraphBoard`'s behavior).
+
+### Limitations
+
+- **Visual correctness was not verified on-device or in a running Flutter renderer.** Hexagon outline shape, arrowhead angle correctness at all 6 orientations, exit path-following on a hex lattice, and tap "feel" are asserted only at the geometry/hit-testing level by the automated suite — consistent with every prior rendering phase in this project (13, 27, 28), per the phase's own stated expectation. An on-device pass is recommended before shipping.
+- Hex boards are still not reachable from the running app's normal navigation — `game_screen.dart` will render `HexBoard` for a hex-topology level, but nothing yet routes a player to one (level selection, leaderboard picker, and mode filtering still only know `2D`/`3D`) — that's Phase 37.4's scope.
+- `GraphBoard`'s `lastActivatedArrowId` is passed as `null` at its `game_screen.dart` call site (pre-existing, not this phase); `HexBoard`'s new call site mirrors that unchanged.
+
+### Next Recommended Phase
+
+Phase 37.4 — hex mode routing (`game_mode.dart`, `level_mode_filter.dart`, `local_level_data_source.dart`, level selection / leaderboard picker screens, `app_config.dart`, ARB files), per `harness/phases/phase_37_4_hex_mode_routing.md`.
+
+## Phase 37.4 — Hexagonal Boards: Mode Routing, Progression & UI
+
+Branch `feat/phase-37-hexagonal-board`. Final sub-phase of Phase 37 (depends
+on 37.1, 37.2, 37.3, all merged). Makes hex a first-class third mode end to
+end — this is the phase that actually makes hex boards reachable from the
+running app; 37.1-37.3 only built the pieces.
+
+### Pre-Implementation Audit
+
+Confirmed the audit's list of boolean board-type sites was complete:
+`level_mode_filter.dart`'s `isThreeDLevel(Level) -> bool` and
+`filterLevelsByGameMode(..., {required bool wantThreeD})`, the
+`mode == GameMode.threeD` ternaries in `displayNumberFor`/
+`maxInternalLevelFor`/`firstInternalLevelFor`, and
+`LocalProgress.isUnlockedForMode`'s matching ternary. Three call sites of
+`filterLevelsByGameMode`: `game_screen.dart` (mode derived from the played
+level itself via `isThreeDLevel(level)`), `level_selection_screen.dart` and
+`leaderboard_level_picker_screen.dart` (mode derived from
+`AppSettingsScope`). `home_screen.dart`'s `_GameModeToggle` hardcoded two
+segments. Also found: `LevelComplexityAnalyzer`'s tiers are rank-relative
+(thirds of each mode's own sorted progression, from Phase 29's rewrite), not
+absolute score thresholds — `current_constraints.md`'s note claiming fixed
+"easy < 45, medium < 62" thresholds was stale and has been corrected.
+
+### What Changed
+
+- **`lib/features/settings/domain/game_mode.dart`** — added `hex('HEX')`. `fromStorageKey`'s existing `orElse: () => GameMode.twoD` fallback (verified, not assumed) means old persisted `settings.gameMode` values stay valid unchanged.
+- **`lib/features/game/presentation/level_mode_filter.dart`** — the crux file, per the phase doc:
+  - New `GameMode modeOfLevel(Level level)`: the single routing authority across all three modes. Checks `boardGraph.topology == BoardTopology.hex` **first**, before falling back to the existing shape-based `isThreeDLevel`. This ordering is load-bearing, not stylistic: a hex level's internal number (31+) is above `twoDLevelCount` (20), so `isThreeDLevel`'s local-only numeric fallback (`number > twoDLevelCount`) would otherwise misclassify every hex level as 3D — this is the exact regression the phase doc flagged as most plausible, and it is now pinned by `should_not_route_a_single_layer_hex_level_as_2d_or_3d`.
+  - `isThreeDLevel` itself is unchanged and still 2D/3D-only — kept for the remaining callers (chiefly the legacy `LocalProgress.isUnlockedForMode`) so their behavior stays byte-for-byte identical.
+  - `filterLevelsByGameMode` signature changed from `{required bool wantThreeD}` to `{required GameMode mode}`, filtering via `modeOfLevel`.
+  - `firstInternalLevelFor`/`maxInternalLevelFor`/`displayNumberFor` rewritten from 2D/3D ternaries to a `switch (mode)` per function (range-driven, not a single split point, per the phase doc). Reserved internal numbers **31-50** for hex; `hexLevelRangeStart = 31`, `hexLevelCount = 40` (the actual last *shipped* hex level — distinct from the wider reserved band). `AppConfig.manualLevelCount` (30) is untouched — it only ever covered 2D+3D.
+  - Documented the metadata-not-graph-shape departure explicitly in `modeOfLevel`'s doc comment (the phase doc's instruction to document this "so a future reader doesn't fix it back") — per an explicit user decision this session, `DYNAMIC_LEVELS_CONTRACT.md` (lives in `backend-poc-arrow`, which the phase's own constraints say not to modify) was left untouched; the note lives here and in `LEVEL_AUTHORING.md` §18 instead.
+- **`lib/features/game/infrastructure/local_level_data_source.dart`** — added `assetPathHex` (default `assets/levels/manual_levels_hex.json`), loaded and appended after the 3D set. `loadManualLevels()` now returns all 40 levels by default.
+- **`lib/features/levels/presentation/level_selection_screen.dart`, `lib/features/leaderboard/presentation/leaderboard_level_picker_screen.dart`** — call-site signature change only (`wantThreeD: gameMode == GameMode.threeD` → `mode: gameMode`); both already built a per-mode `LevelProgression` (Phase 29), so hex support is automatic once `filterLevelsByGameMode`/`AppSettingsScope.gameMode` support the third value.
+- **`lib/features/game/presentation/game_screen.dart`** — `_loadProgression`'s `filterLevelsByGameMode` call switched from `wantThreeD: isThreeDLevel(level)` to `mode: modeOfLevel(level)`. Also fixed a related correctness gap found during this phase (not explicitly in scope, but low-risk and directly relevant): the arithmetic-fallback `gameMode` (used only when the progression fails to load) was read from app-wide `AppSettingsScope` settings rather than the actually-played level — these can disagree (e.g. opening a level via a leaderboard/challenge deep-link while the home toggle is set to a different mode). Now computed as `modeOfLevel(controller.level!)` once the level has loaded, falling back to settings only before that. Verified against the existing `game_screen_display_number_test.dart` fixtures (all still pass unchanged) since `modeOfLevel` agrees with the old settings-derived value whenever the played level's own mode matches the test's `gameMode` parameter, which every existing fixture does.
+- **`lib/features/home/presentation/home_screen.dart`** — `_GameModeToggle` gained a third `_ModeSegment` for `GameMode.hex` (accent `AppTheme.neonPurple`, label from new `gameModeHex` ARB key).
+- **`lib/core/localization/l10n/app_en.arb`, `app_es.arb`** — added `gameModeHex: "HEX"` (same value both locales, matching the existing `gameMode2D`/`gameMode3D` pattern); regenerated via `flutter gen-l10n`.
+- **`docs/LEVEL_AUTHORING.md` §18** — updated the "not yet loaded/selectable" note (now first-class, end-to-end) and added a "Mode routing (Phase 37.4)" paragraph documenting `modeOfLevel`'s check order and the range-driven internal-number functions.
+- **`harness/context/current_constraints.md`** — corrected the stale "Analyzer tier thresholds (easy < 45, medium < 62)" note to describe the actual rank-relative tiering (drive-by fix; the absolute-threshold description predates Phase 29's rewrite and was never corrected).
+
+### Test Fixups Required by the Loader Change
+
+Appending the hex file to `LocalLevelDataSource`'s default load path means every test that calls the *merged* repository now sees 40 levels instead of 30 — required updating, not extending:
+
+- `manual_levels_test.dart`: 4 count assertions `30` → `40` (`should_load_30_manual_levels_from_assets` renamed `should_load_40_...`, unique-numbers/unique-ids counts, `manual-040` added to the id-contains list); `should_have_progressive_difficulty_across_manual_levels`'s `number >= 11` hard-tier assertion rescoped to `number >= 11 && number <= 30` (hex 31-33 are easy, not hard — the merged list was accidentally failing this pre-existing assertion); `should_meet_arrow_density_bands_per_tier` and `should_have_no_interior_gap_exits` now exclude `generationType == 'hex'` (hex uses its own `HEX_DENSITY` bands and has its own gap-exit test in `manual_levels_hex_test.dart` — same pattern as the existing `'figure'` exclusion); the two `3D levels (21-30)` group tests' `number >= 21` filters rescoped to `number >= 21 && number <= 30` (were unintentionally matching hex 31-40 too).
+- `merged_level_repository_integration_test.dart`: local-only level count `30` → `40` in two places; `wantThreeD:` → `mode:` at both call sites.
+- `level_complexity_test.dart`: `wantThreeD:` → `mode:` at both existing call sites; added a third `should_spread_hex_progression_across_all_three_tiers` test (passes on first run, confirming no calibration was needed).
+
+### Files Touched
+
+- `lib/features/settings/domain/game_mode.dart`
+- `lib/features/game/presentation/level_mode_filter.dart`
+- `lib/features/game/infrastructure/local_level_data_source.dart`
+- `lib/features/levels/presentation/level_selection_screen.dart`
+- `lib/features/leaderboard/presentation/leaderboard_level_picker_screen.dart`
+- `lib/features/game/presentation/game_screen.dart`
+- `lib/features/home/presentation/home_screen.dart`
+- `lib/core/localization/l10n/app_en.arb`, `app_es.arb` (+ generated `app_localizations*.dart`)
+- `docs/LEVEL_AUTHORING.md`
+- `harness/context/current_constraints.md`
+- `test/features/game/infrastructure/manual_levels_test.dart`
+- `test/features/game/infrastructure/merged_level_repository_integration_test.dart`
+- `test/features/game/application/level_complexity_test.dart`
+- `test/features/game/presentation/level_mode_filter_test.dart` (extended)
+- `test/features/levels/presentation/level_selection_hex_mode_test.dart` (new)
+- `test/features/progress/hex_progression_unlock_test.dart` (new)
+- `test/features/game/presentation/level_mode_routing_regression_test.dart` (new)
+
+### Verification Results
+
+- `flutter analyze`: passed with no issues.
+- `flutter test`: 320/320 passed (15 new).
+- `node tool/gen_levels.js --validate-only`: `ALL VALID: true` for all three sets (2D, 3D, hex), exit 0.
+- `git diff --stat -- assets/levels/manual_levels_2d.json assets/levels/manual_levels_3d.json`: empty — both byte-identical, confirming the constraint ("do not touch `manual_levels_2d.json` or `manual_levels_3d.json`") held. `manual_levels_hex.json` is untouched (already existed from 37.2).
+- `backend-poc-arrow` untouched (confirmed via `git status`); Git remotes not modified; feature branch only.
+
+### New Tests
+
+- `level_mode_filter_test.dart` (extended): `should_route_hex_topology_level_to_hex_mode`, `should_still_route_square_and_3d_levels_unchanged`, `should_not_route_a_single_layer_hex_level_as_2d_or_3d`, plus a `filterLevelsByGameMode` group proving all three modes partition independently.
+- `level_selection_hex_mode_test.dart` (new): hex-only listing, 2D/3D lists unchanged when hex levels are present in the same loaded list, hex progression display numbers (1..N), tapping a hex card opens the correct internal number.
+- `hex_progression_unlock_test.dart` (new): hex's first level is always unlocked, its second level gates on the first via the real `LevelProgression`+`isUnlockedAfter` production gate, and unlock is isolated both ways (2D/3D completion doesn't unlock hex; hex completion doesn't unlock 2D).
+- `level_mode_routing_regression_test.dart` (new): levels 1-30 keep their internal numbers and existing 2D/3D mode assignment against the real shipped assets; the hex band (31-40) never leaks into the 2D or 3D filtered lists.
+- `level_complexity_test.dart` (extended): `should_spread_hex_progression_across_all_three_tiers`.
+
+### Limitations
+
+- **Manual on-device validation for the full Phase 37 stack (37.1-37.4) has not been performed and remains pending**, consistent with every prior phase in this project — a device was not available in this environment. This covers: hexagon outline rendering, arrowhead angle correctness at all 6 orientations, exit path-following on a hex lattice, tap feel/hit-testing on a real touchscreen, the home-screen hex toggle's visual/interaction feel, and end-to-end play of a hex level (pick hex mode → open a level → tap an arrow → confirm it exits along one of six directions on a visibly hexagonal board). The automated suite pins geometry, hit-testing, mode routing, and progression/unlock logic, but none of it substitutes for an on-device pass.
+- Hex is reachable from the main menu and plays end to end in the automated-test sense (widget tests drive the full screen → tap → activate path), but this has not been exercised in a running `flutter run` session.
+- `DYNAMIC_LEVELS_CONTRACT.md` (backend-poc-arrow) was intentionally left undocumented for the metadata-vs-graph-shape departure, per the user's explicit decision to keep this phase's file changes entirely inside `frontend-poc-arrow`. A future session should add a short cross-reference there if backend-facing clarity is ever needed.
+
+### Next Recommended Phase
+
+None — this was the final sub-phase of Phase 37. A natural follow-up (not requested, not started) would be manual on-device validation of the full hex stack once a device is available.

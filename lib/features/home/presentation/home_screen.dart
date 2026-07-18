@@ -331,6 +331,13 @@ class _GameModeToggle extends StatelessWidget {
               selected: selected == GameMode.threeD,
               onTap: () => onChanged(GameMode.threeD),
             ),
+            const SizedBox(width: 4),
+            _ModeSegment(
+              label: localizations.gameModeHex,
+              accentColor: AppTheme.neonPurple,
+              selected: selected == GameMode.hex,
+              onTap: () => onChanged(GameMode.hex),
+            ),
           ],
         ),
       ),
