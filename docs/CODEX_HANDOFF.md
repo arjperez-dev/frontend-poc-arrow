@@ -3624,3 +3624,64 @@ Appending the hex file to `LocalLevelDataSource`'s default load path means every
 ### Next Recommended Phase
 
 None — this was the final sub-phase of Phase 37. A natural follow-up (not requested, not started) would be manual on-device validation of the full hex stack once a device is available.
+
+---
+
+## Phase 38 — Backend Level Rows for Hex Levels 31-40
+
+Backend-only phase (explicitly authorized to touch `backend-poc-arrow`,
+superseding the standing "do not modify backend" constraint for this phase),
+closing the gap `backend-poc-arrow/README.md` documented after Phase 37's
+README-update work: hex levels 31-40 had no backend `Level` rows, so
+`GET /levels` could never resolve a `levelId` for them and their leaderboard
+submission / progress sync silently no-opped.
+
+### Pre-Implementation Audit
+
+Confirmed via `prisma/seed.ts` that seeding is `upsert({ where: { number } })`
+— already idempotent by construction, nothing to change there. Confirmed via
+`manual-levels.ts` that numbers 16-30 already follow the exact pattern this
+phase needed to extend to 31-40: a generated placeholder `LevelSpec` block
+(square 3x3, one arrow, fixed `timeLimit`/`maxMoves`), documented with a
+comment explaining why a `Level` row exists per number even though 16-30's
+real playable definitions live in the frontend's local assets. Confirmed via
+`merged_level_repository.dart` that this pattern is safe to extend to hex: any
+backend/remote DTO whose `number` already exists in the local level list is
+skipped outright (`if (localNumbers.contains(dto.number)) continue`), so a
+square placeholder `definitionJson` under a hex-range number can never reach
+rendering — the row exists solely to give `GET /levels` something to resolve
+a `levelId` from.
+
+### What Changed
+
+- **`backend-poc-arrow/prisma/levels/manual-levels.ts`** — extended `levelSpecs` with a second generated block for numbers 31-40, structurally identical to 16-30's placeholder pattern (square 3x3, one arrow, `timeLimit: 90`, `maxMoves: 40`), but with `difficulty` sourced from each level's real value in `manual_levels_hex.json` (31-33 `easy`, 34-37 `medium`, 38-40 `hard`) instead of a blanket `'hard'` — cosmetic (the backend `difficulty` column is never read back for these rows, since the client plays from local assets), but avoids planting a second misleading placeholder value next to the existing one. A comment documents the same "row exists only for a stable `levelId`, not for gameplay" rationale as the 16-30 block.
+- **`backend-poc-arrow/README.md`** — Seed Data section now describes `manual-levels.ts` as covering 1-40 (1-15 real, 16-40 placeholder) and explains the 31-40 `difficulty`-sourcing choice; removed the now-resolved "Known gap" blockquote. Backend-Driven Dynamic Levels intro updated to describe 1-40 as backend-seeded (1-15 real, 16-40 placeholder) instead of splitting at "1-30 backed here / 31-40 client-only."
+- **`backend-poc-arrow/docs/DYNAMIC_LEVELS_CONTRACT.md`** — added a note after §1's 2D/3D discriminator explaining hex is out of scope for that graph-shape-based discriminator (hex and square share the same integer lattice, so the frontend reads `metadata.topology` explicitly — see `LEVEL_AUTHORING.md` §18), and that this phase's placeholder rows carry no real hex geometry or `metadata.topology`; if the backend is ever extended to serve real remote hex levels, a `topology` field should be added to the read contract rather than folded into the existing `mode` hint.
+
+### Files Touched
+
+- `backend-poc-arrow/prisma/levels/manual-levels.ts`
+- `backend-poc-arrow/README.md`
+- `backend-poc-arrow/docs/DYNAMIC_LEVELS_CONTRACT.md`
+
+### Verification Results
+
+- `npm run lint` (backend): passed, no issues.
+- `npx tsc --noEmit` (backend): passed, no type errors.
+- `npm test` (backend): 12/12 passed (unchanged — no existing suite covers seed data directly).
+- A standalone `ts-node` script (written to `prisma/_verify_seed.ts`, run, then deleted) confirmed `manualLevels` produces exactly 40 entries with unique numbers, all of 31-40 present, and `difficulty` matching `manual_levels_hex.json`'s per-level metadata (31-33 easy, 34-37 medium, 38-40 hard).
+- `flutter analyze` / `flutter test` (frontend, run per the phase template despite no frontend files touched): clean / 320/320 passed.
+- `node tool/gen_levels.js --validate-only`: not applicable — no level asset files were touched.
+
+### New Tests
+
+- None. This phase changes seed data and documentation only; no application logic changed on either side, so no new automated test was warranted. See Limitations for what was not exercised end-to-end.
+
+### Limitations
+
+- **No live database was available in this environment** (Docker daemon not running), so the phase's own Validation section (`npx prisma migrate reset --force`, `npm run prisma:seed` run twice for idempotency, a manual `GET /levels` check, and a real hex leaderboard submission) could not be executed end-to-end. Verification substituted a type-check plus a standalone script proving the exported `manualLevels` data shape is correct. **Running the real seed against a live database, and confirming a hex-level leaderboard submission actually persists, is still owed before this can be considered fully validated** — flagging explicitly rather than treating the static checks as equivalent.
+- The `difficulty` values chosen for 31-40 are cosmetic display data only; no code path reads them back for hex levels (the client never fetches or renders these rows' `definitionJson`).
+
+### Next Recommended Phase
+
+None requested. A natural follow-up (not started) would be running the real seed/migrate cycle against a live database once one is available in this environment, to close out this phase's one remaining unverified item.
